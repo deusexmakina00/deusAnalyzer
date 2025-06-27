@@ -15,7 +15,7 @@ namespace PacketCapture
     {
         private static readonly Logger logger = LogManager.GetCurrentClassLogger();
         private readonly int targetPort;
-        private readonly Action<byte[], DateTime> onPacketReceived;
+        private readonly Action<byte[], uint, DateTime> onPacketReceived;
         private readonly List<ICaptureDevice> captureDevices = [];
         private bool isCapturing;
 
@@ -26,7 +26,7 @@ namespace PacketCapture
         /// <param name="packetHandler">패킷 수신 시 호출될 핸들러</param>
         /// <exception cref="ArgumentNullException">packetHandler가 null인 경우</exception>
         /// <exception cref="ArgumentOutOfRangeException">port가 유효하지 않은 경우</exception>
-        public NpcapPacketCapture(int port, Action<byte[], DateTime> packetHandler)
+        public NpcapPacketCapture(int port, Action<byte[], uint, DateTime> packetHandler)
         {
             if (port is <= 0 or > 65535)
                 throw new ArgumentOutOfRangeException(
@@ -408,7 +408,7 @@ namespace PacketCapture
 
                     // Python capture.py의 packet_processor와 동일한 방식으로 처리
                     // SEQ 번호와 페이로드, 타임스탬프를 콜백으로 전달
-                    onPacketReceived(payload, DateTime.UtcNow);
+                    onPacketReceived(payload, tcpPacket.SequenceNumber, DateTime.UtcNow);
                 }
             }
             catch (Exception ex)

@@ -16,17 +16,9 @@ public sealed class PacketCaptureManager : IDisposable
     private const int PORT = 16000;
     private const int MAX_BUFFER_SIZE = 3 * 1024 * 1024;
     private const double SKILL_TIMEOUT_SECONDS = 5.0;
-    private static readonly FrozenSet<int> ExceptedDataTypes = new[]
-    {
-        10701,
-        100088,
-        10446,
-        10546,
-        10047,
-        100552,
-        100569,
-        100041,
-    }.ToFrozenSet(); // SkillMatcher를 사용한 통합 스킬 매칭 시스템
+    private static readonly FrozenSet<int> ExceptedDataTypes = PacketTypeRegistry
+        .GetPacketTypeMap()
+        .Keys.ToFrozenSet();
     private readonly SkillMatcher _skillMatcher = new();
     private readonly MemoryStream _buffer = new();
     private readonly object _lockObject = new();
@@ -130,12 +122,13 @@ public sealed class PacketCaptureManager : IDisposable
     /// 패킷 수신 시 호출되는 콜백 메서드
     /// </summary>
     /// <param name="data">패킷 데이터</param>
+    /// <param name="seq">패킷 시퀀스 번호</param>
     /// <param name="timestamp">수신 시각</param>
-    private void OnPacketReceived(byte[] data, DateTime timestamp)
+    private void OnPacketReceived(byte[] data, uint seq, DateTime timestamp)
     {
         try
         {
-            var payloadData = new PacketPayload(data, (uint)data.Length, timestamp);
+            var payloadData = new PacketPayload(data, seq, timestamp);
             ParseData(payloadData);
         }
         catch (Exception ex)
@@ -172,14 +165,27 @@ public sealed class PacketCaptureManager : IDisposable
 
             try
             {
-                var packets = PacketExtractor.ExtractPackets(data, ExceptedDataTypes.ToArray());
-                if (packets.Count == 0)
-                    return;
+                var allPackets = PacketExtractor.ExtractPackets(data);
 
-                logger.Debug($"Found {packets.Count} data packets in {data.Length} bytes");
+                PacketExtractor.SavePacketsToFiles(allPackets, "C:\\Packets", _lastAt, _lastRelSeq);
                 int maxProcessedEnd = 0;
-                foreach (var (dataType, payload, dataLen, start, end) in packets)
+                int processedCount = 0;
+
+                logger.Debug($"Found {allPackets.Count} data packets in {data.Length} bytes");
+                foreach (
+                    var (dataType, dataLen, encodeType, payload, start, end, seq, at) in allPackets
+                )
                 {
+                    // 패킷의 끝 위치
+                    maxProcessedEnd = Math.Max(maxProcessedEnd, end);
+
+                    // 관심 있는 패킷만 실제 처리
+                    if (!ExceptedDataTypes.Contains(dataType))
+                    {
+                        //                        logger.Trace($"Skipping unregistered packet type: {dataType} at {start}-{end}");
+                        continue;
+                    }
+                    processedCount++;
                     logger.Debug(
                         $"Processing packet: type={dataType}, len={dataLen}, pos={start}-{end}"
                     );
@@ -188,7 +194,7 @@ public sealed class PacketCaptureManager : IDisposable
                     {
                         if (SkillInfoPacket.TYPE.Contains(dataType))
                         {
-                            var skillInfo = SkillInfoPacket.Parse(payload, dataType);
+                            var skillInfo = SkillInfoPacket.Parse(payload);
                             if (skillInfo.UsedBy == skillInfo.Target)
                             {
                                 // 버프 스킬 스킵
@@ -207,8 +213,6 @@ public sealed class PacketCaptureManager : IDisposable
                                 _skillMatcher.EnqueueDamage(damage, _lastAt);
                             }
                         }
-
-                        maxProcessedEnd = Math.Max(maxProcessedEnd, end);
                     }
                     catch (Exception ex)
                     {
@@ -223,6 +227,7 @@ public sealed class PacketCaptureManager : IDisposable
                     }
                 }
                 _skillMatcher.CleanupOldSkills(_lastAt);
+
                 // 처리된 패킷들까지만 버퍼에서 제거
                 if (maxProcessedEnd > 0)
                 {
@@ -239,6 +244,17 @@ public sealed class PacketCaptureManager : IDisposable
             {
                 logger.Error(ex, "Unexpected error processing packets");
                 logger.Error(ex.StackTrace);
+
+                // 오류 발생 시 버퍼 일부 정리 (메모리 누수 방지)
+                if (data.Length > MAX_BUFFER_SIZE / 2)
+                {
+                    var trimmedData = TrimBuffer(data);
+                    _buffer.SetLength(0);
+                    _buffer.Write(trimmedData, 0, trimmedData.Length);
+                    logger.Warn(
+                        $"Emergency buffer trim due to error: {trimmedData.Length} bytes remaining"
+                    );
+                }
                 return;
             }
         }
@@ -251,29 +267,9 @@ public sealed class PacketCaptureManager : IDisposable
     /// <returns>잘라낸 데이터</returns>
     private byte[] TrimBuffer(ReadOnlySpan<byte> data)
     {
-        int firstValidPos = data.Length;
-
-        // 유효한 데이터 타입의 첫 번째 위치 찾기
-        foreach (int dataType in ExceptedDataTypes)
-        {
-            var pattern = BitConverter.GetBytes(dataType).AsSpan();
-            int pos = data.IndexOf(pattern);
-            if (pos != -1)
-                firstValidPos = Math.Min(firstValidPos, pos);
-        }
-
-        if (firstValidPos < data.Length)
-        {
-            var result = data[firstValidPos..].ToArray();
-            logger.Debug($"Buffer trimmed: kept data from position {firstValidPos}");
-            return result;
-        }
-        else
-        {
-            int keepSize = MAX_BUFFER_SIZE / 2;
-            var result = data[^keepSize..].ToArray();
-            return result;
-        }
+        int keepSize = MAX_BUFFER_SIZE / 2;
+        var result = data[^keepSize..].ToArray();
+        return result;
     }
 
     /// <summary>

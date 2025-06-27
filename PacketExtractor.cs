@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text;
 using SharpPcap.WinpkFilter;
 
 namespace PacketCapture;
@@ -13,10 +14,13 @@ namespace PacketCapture;
 /// <param name="EndPosition">끝 위치</param>
 public readonly record struct ExtractedPacket(
     int DataType,
-    byte[] Payload,
     int DataLength,
+    int EncodeType,
+    byte[] Payload,
     int StartPosition,
-    int EndPosition
+    int EndPosition,
+    uint RelSeq = 0,
+    DateTime At = default
 );
 
 /// <summary>
@@ -33,6 +37,9 @@ public static class PacketExtractor
 
     /// <summary>Brotli 압축 인코딩 타입</summary>
     private const byte BrotliEncodeType = 1;
+
+    // DataType : TypeName 매핑 사전 생성
+    private static readonly Dictionary<int, string> typeMap = PacketTypeRegistry.GetPacketTypeMap();
 
     /// <summary>
     /// ReadOnlySpan을 사용한 고성능 패턴 검색
@@ -87,13 +94,15 @@ public static class PacketExtractor
         return filteredPackets;
     }
 
+    private static int[] Excludes = [100252, 10318, 1694498816];
+
     /// <summary>
     /// 바이트 배열에서 모든 유효한 패킷을 추출합니다.
     /// DataType(4) + Length(4) + Encode(1) + Payload(Length) 구조를 파싱합니다.
     /// </summary>
     /// <param name="data">패킷 데이터</param>
     /// <returns>추출된 패킷 목록</returns>
-    private static List<ExtractedPacket> ExtractPackets(ReadOnlySpan<byte> data)
+    public static List<ExtractedPacket> ExtractPackets(ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty)
             return [];
@@ -107,7 +116,10 @@ public static class PacketExtractor
             var packet = TryExtractSinglePacket(data, position);
             if (packet.HasValue)
             {
-                packets.Add(packet.Value);
+                if (!Excludes.Contains(packet.Value.DataType))
+                {
+                    packets.Add(packet.Value);
+                }
                 position = packet.Value.EndPosition;
             }
             else
@@ -138,24 +150,43 @@ public static class PacketExtractor
         try
         {
             // 패킷 헤더에서 데이터 타입과 길이 추출
-            var dataType = data[..4].from_bytes<int>("little");
-            var payloadLength = data[4..8].from_bytes<int>("little");
+            // DataType 읽기 (Little Endian)
+            var dataTypeBytes = data.Slice(startPosition, 4);
+            int dataType = dataTypeBytes.from_bytes<int>("little");
+
+            // Length 읽기 (Little Endian)
+            var lengthBytes = data.Slice(startPosition + 4, 4);
+            int payloadLength = lengthBytes.from_bytes<int>("little");
             var encodeType = data[startPosition + 8];
 
             // 유효성 검사
             if (!IsValidPacketLength(payloadLength))
                 return null;
+
+            if (dataType <= 0 || dataType > 200000)
+                return null;
+            // 인코딩 타입이 Brotli(1) 또는 압축되지 않음(0)만 허용
+            if (encodeType < 0 || encodeType > 1)
+            {
+                return null;
+            }
+            // 전체 패킷 길이 확인
             int totalPacketLength = PacketHeaderSize + payloadLength;
+            if (startPosition + totalPacketLength > data.Length)
+                return null;
+
+            int endPosition = startPosition + totalPacketLength;
 
             // 페이로드 추출
-            var rawPayload = data.Slice(startIndex + PacketHeaderSize, dataLength);
+            var rawPayload = data.Slice(startPosition + PacketHeaderSize, payloadLength);
             byte[] payload = ProcessPayload(rawPayload, encodeType);
 
             return new ExtractedPacket(
                 DataType: dataType,
+                DataLength: payloadLength,
+                EncodeType: encodeType,
                 Payload: payload,
-                DataLength: dataLength,
-                StartPosition: startIndex,
+                StartPosition: startPosition,
                 EndPosition: endPosition
             );
         }
@@ -209,5 +240,265 @@ public static class PacketExtractor
 
         brotliStream.CopyTo(decompressedStream);
         return decompressedStream.ToArray();
-    } // 이전 버전과의 호환성을 위한 오버로드
+    }
+
+    /// <summary>
+    /// 추출된 패킷들을 시간과 시퀀스로 구분하여 파일로 저장합니다.
+    /// </summary>
+    /// <param name="packets">저장할 패킷 목록</param>
+    /// <param name="baseDirectory">기본 저장 디렉토리</param>
+    /// <param name="timestamp">패킷 수신 시간</param>
+    /// <param name="sequenceNumber">시퀀스 번호</param>
+    /// <returns>저장된 파일 경로 목록</returns>
+    public static List<string> SavePacketsToFiles(
+        List<ExtractedPacket> packets,
+        string baseDirectory,
+        DateTime timestamp,
+        uint sequenceNumber
+    )
+    {
+        if (packets.Count == 0)
+            return [];
+
+        var savedFiles = new List<string>();
+
+        try
+        {
+            // 시간 기반 폴더 구조 생성: baseDirectory/YYYY-MM-DD/HH-mm-ss/seq_########
+            string dateFolder = timestamp.ToString("yyyy-MM-dd");
+            string timeFolder = timestamp.ToString("HH-mm-ss");
+            string seqFolder = $"seq_{sequenceNumber:D8}";
+
+            string fullDirectory = Path.Combine(baseDirectory, dateFolder, timeFolder, seqFolder);
+            Directory.CreateDirectory(fullDirectory);
+
+            // 패킷별로 개별 파일 저장
+            for (int i = 0; i < packets.Count; i++)
+            {
+                var packet = packets[i];
+                string fileName =
+                    $"packet_{i:D3}_type_{packet.DataType:X8}_len_{packet.DataLength}.bin";
+                string filePath = Path.Combine(fullDirectory, fileName);
+
+                // 패킷 데이터를 바이너리 파일로 저장
+                File.WriteAllBytes(filePath, packet.Payload);
+                savedFiles.Add(filePath);
+
+                // 메타데이터 파일도 함께 저장
+                string metaFileName =
+                    $"packet_{i:D3}_type_{packet.DataType:X8}_len_{packet.DataLength}.meta";
+                string metaFilePath = Path.Combine(fullDirectory, metaFileName);
+
+                string metaContent = CreatePacketMetadata(packet, timestamp, sequenceNumber, i);
+                File.WriteAllText(metaFilePath, metaContent);
+                savedFiles.Add(metaFilePath);
+            }
+
+            // 전체 패킷 요약 정보 저장
+            string summaryPath = Path.Combine(fullDirectory, "packets_summary.txt");
+            string summary = CreatePacketsSummary(packets, timestamp, sequenceNumber);
+            File.WriteAllText(summaryPath, summary);
+            savedFiles.Add(summaryPath);
+
+            // 16진수 덤프 파일 저장
+            string hexDumpPath = Path.Combine(fullDirectory, "packets_hexdump.txt");
+            string hexDump = CreatePacketsHexDump(packets);
+            File.WriteAllText(hexDumpPath, hexDump);
+            savedFiles.Add(hexDumpPath);
+
+            Console.WriteLine($"패킷 {packets.Count}개가 {fullDirectory}에 저장되었습니다.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"패킷 저장 중 오류 발생: {ex.Message}");
+        }
+
+        return savedFiles;
+    }
+
+    /// <summary>
+    /// 패킷의 메타데이터를 생성합니다.
+    /// </summary>
+    /// <param name="packet">패킷 정보</param>
+    /// <param name="timestamp">수신 시간</param>
+    /// <param name="sequenceNumber">시퀀스 번호</param>
+    /// <param name="packetIndex">패킷 인덱스</param>
+    /// <returns>메타데이터 문자열</returns>
+    private static string CreatePacketMetadata(
+        ExtractedPacket packet,
+        DateTime timestamp,
+        uint sequenceNumber,
+        int packetIndex
+    )
+    {
+        var sb = new StringBuilder();
+
+        string typeName = typeMap.TryGetValue(packet.DataType, out var name)
+            ? name
+            : $"{packet.DataType}";
+
+        sb.AppendLine("=== 패킷 메타데이터 ===");
+        sb.AppendLine($"수신 시간: {timestamp:yyyy-MM-dd HH:mm:ss.fff}");
+        sb.AppendLine($"시퀀스 번호: {sequenceNumber}");
+        sb.AppendLine($"패킷 인덱스: {packetIndex}");
+        sb.AppendLine($"데이터 타입: 0x{packet.DataType:X8} ({typeName})");
+        sb.AppendLine($"인코딩 타입: {packet.EncodeType}");
+        sb.AppendLine($"페이로드 길이: {packet.DataLength} bytes");
+        sb.AppendLine($"원본 위치: 0x{packet.StartPosition:X8} - 0x{packet.EndPosition:X8}");
+        sb.AppendLine($"페이로드 해시: {ComputeHash(packet.Payload)}");
+        sb.AppendLine();
+        sb.AppendLine("=== 페이로드 미리보기 (처음 64바이트) ===");
+
+        int previewLength = Math.Min(64, packet.Payload.Length);
+        var preview = packet.Payload[0..previewLength];
+        sb.AppendLine(new ReadOnlySpan<byte>(preview).To_hex());
+
+        if (packet.Payload.Length > 64)
+        {
+            sb.AppendLine($"... (총 {packet.Payload.Length - 64}바이트 더 있음)");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 패킷 목록의 요약 정보를 생성합니다.
+    /// </summary>
+    /// <param name="packets">패킷 목록</param>
+    /// <param name="timestamp">수신 시간</param>
+    /// <param name="sequenceNumber">시퀀스 번호</param>
+    /// <returns>요약 정보 문자열</returns>
+    private static string CreatePacketsSummary(
+        List<ExtractedPacket> packets,
+        DateTime timestamp,
+        uint sequenceNumber
+    )
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("=== 패킷 세션 요약 ===");
+        sb.AppendLine($"수신 시간: {timestamp:yyyy-MM-dd HH:mm:ss.fff}");
+        sb.AppendLine($"시퀀스 번호: {sequenceNumber}");
+        sb.AppendLine($"총 패킷 수: {packets.Count}");
+        sb.AppendLine();
+
+        // 패킷 타입별 통계
+        var typeGroups = packets.GroupBy(p => p.DataType).OrderBy(g => g.Key);
+        sb.AppendLine("=== 패킷 타입별 통계 ===");
+
+        foreach (var group in typeGroups)
+        {
+            var avgLength = group.Average(p => p.DataLength);
+            var minLength = group.Min(p => p.DataLength);
+            var maxLength = group.Max(p => p.DataLength);
+            var totalBytes = group.Sum(p => p.DataLength);
+
+            sb.AppendLine($"타입 0x{group.Key:X8} ({group.Key}):");
+            sb.AppendLine($"  개수: {group.Count()}");
+            sb.AppendLine($"  총 바이트: {totalBytes:N0}");
+            sb.AppendLine($"  평균 길이: {avgLength:F1}");
+            sb.AppendLine($"  길이 범위: {minLength} - {maxLength}");
+            sb.AppendLine();
+        }
+
+        // 개별 패킷 목록
+        sb.AppendLine("=== 개별 패킷 목록 ===");
+        for (int i = 0; i < packets.Count; i++)
+        {
+            var packet = packets[i];
+            string typeName = typeMap.TryGetValue(packet.DataType, out var name)
+                ? name
+                : $"{packet.DataType}";
+
+            sb.AppendLine(
+                $"[{i:D3}] 타입: 0x{packet.DataType:X8} ({typeName}), "
+                    + $"길이: {packet.DataLength}, "
+                    + $"위치: 0x{packet.StartPosition:X8}-0x{packet.EndPosition:X8}"
+            );
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 패킷들의 16진수 덤프를 생성합니다.
+    /// </summary>
+    /// <param name="packets">패킷 목록</param>
+    /// <returns>16진수 덤프 문자열</returns>
+    private static string CreatePacketsHexDump(List<ExtractedPacket> packets)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("=== 패킷 16진수 덤프 ===");
+        sb.AppendLine();
+
+        for (int i = 0; i < packets.Count; i++)
+        {
+            var packet = packets[i];
+            string typeName = typeMap.TryGetValue(packet.DataType, out var name)
+                ? name
+                : $"{packet.DataType}";
+
+            sb.AppendLine($"=== 패킷 {i:D3}: 타입 0x{packet.DataType:X8} ({typeName}) ===");
+            sb.AppendLine(HexDump(packet));
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 바이트 배열의 해시값을 계산합니다.
+    /// </summary>
+    /// <param name="data">해시를 계산할 데이터</param>
+    /// <returns>SHA256 해시 문자열</returns>
+    private static string ComputeHash(byte[] data)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hash = sha256.ComputeHash(data);
+        return Convert.ToHexString(hash);
+    }
+
+    /// <summary>
+    /// 패킷 페이로드를 16진수 덤프 형태로 출력합니다.
+    /// </summary>
+    /// <param name="packet">덤프할 패킷</param>
+    /// <param name="bytesPerLine">한 줄에 출력할 바이트 수</param>
+    /// <returns>16진수 덤프 문자열</returns>
+    public static string HexDump(ExtractedPacket packet, int bytesPerLine = 16)
+    {
+        var payload = packet.Payload;
+        var dump = new StringBuilder();
+        string typeName = typeMap.TryGetValue(packet.DataType, out var name)
+            ? name
+            : $"{packet.DataType}";
+        dump.AppendLine($"Sequence: {packet.RelSeq}");
+        dump.AppendLine($"Received: {packet.At:yyyy-MM-dd HH:mm:ss.fff}");
+        dump.AppendLine($"DataType: 0x{packet.DataType:X8} ({typeName})");
+        dump.AppendLine($"Length: {packet.DataLength} bytes");
+        dump.AppendLine($"EncodeType: {packet.EncodeType}");
+        dump.AppendLine($"Position: 0x{packet.StartPosition:X8}-0x{packet.EndPosition:X8}");
+        dump.AppendLine("Payload:");
+
+        for (int i = 0; i < payload.Length; i += bytesPerLine)
+        {
+            var lineBytes = Math.Min(bytesPerLine, payload.Length - i);
+            var line = payload[i..(i + lineBytes)];
+
+            dump.Append($"{i:X4}: ");
+            dump.Append(new ReadOnlySpan<byte>(line).To_hex(" "));
+
+            if (lineBytes < bytesPerLine)
+            {
+                dump.Append(new string(' ', (bytesPerLine - lineBytes) * 3));
+            }
+
+            dump.Append(" |");
+            foreach (byte b in line)
+            {
+                dump.Append(b >= 32 && b <= 126 ? (char)b : '.');
+            }
+            dump.AppendLine("|");
+        }
+
+        return dump.ToString();
+    }
 }

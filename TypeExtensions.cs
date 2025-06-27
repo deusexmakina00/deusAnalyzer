@@ -95,12 +95,22 @@ public static class TypeExtensions
         return true;
     }
 
-    public static string To_hex(this ReadOnlySpan<byte> bytes)
+    public static string To_hex(this ReadOnlySpan<byte> bytes, string separator = "")
     {
         if (bytes.Length == 0)
             return string.Empty;
 
-        // 바이트 배열을 16진수 문자열로 변환
-        return Convert.ToHexString(bytes).ToLowerInvariant();
+        if (string.IsNullOrEmpty(separator))
+            return Convert.ToHexString(bytes).ToLowerInvariant();
+
+        // 구분자가 있을 경우 직접 변환
+        var sb = new System.Text.StringBuilder(bytes.Length * (2 + separator.Length));
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            if (i > 0)
+                sb.Append(separator);
+            sb.Append(bytes[i].ToString("x2"));
+        }
+        return sb.ToString();
     }
 }
