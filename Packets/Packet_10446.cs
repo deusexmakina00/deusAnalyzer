@@ -14,7 +14,7 @@ public sealed class SkillInfoPacket : Packet
 
     /// <summary>스킬 대상 ID</summary>
     public string Target { get; init; } = string.Empty;
-    public string Action { get; init; } = string.Empty;
+    public string Owner { get; init; } = string.Empty;
 
     /// <summary>스킬 이름</summary>
     public string SkillName { get; init; } = string.Empty;
@@ -26,16 +26,16 @@ public sealed class SkillInfoPacket : Packet
     /// <param name="target">대상 ID</param>
     /// <param name="action">액션</param>
     /// <param name="skillName">스킬 이름</param>
-    public SkillInfoPacket(string usedBy, string target, string action, string skillName)
+    public SkillInfoPacket(string usedBy, string target, string owner, string skillName)
     {
         UsedBy = usedBy ?? throw new ArgumentNullException(nameof(usedBy));
         Target = target ?? throw new ArgumentNullException(nameof(target));
-        Action = action ?? throw new ArgumentNullException(nameof(action));
+        Owner = owner ?? throw new ArgumentNullException(nameof(owner));
         SkillName = skillName ?? throw new ArgumentNullException(nameof(skillName));
     }
 
     public override string ToString() =>
-        $"{UsedBy} -> {Target} | Action: {Action} | Skill Name: {SkillName}";
+        $"{UsedBy} -> {Target} | Owner: {Owner} | Skill Name: {SkillName}";
 
     /// <summary>
     /// ReadOnlySpan을 사용한 고성능 스킬 패킷 파싱
@@ -53,8 +53,8 @@ public sealed class SkillInfoPacket : Packet
         // 대상 ID 추출 (4바이트, 4바이트 패딩 후)
         string target = content[..4].To_hex();
         content = content[8..];
-        // 액션 코드 추출 (4바이트, Little Endian)
-        string action = content[..4].To_hex();
+        // 소유자 ID 추출 (4바이트, 4바이트 패딩 후)
+        string owner = content[..4].To_hex();
         content = content[8..];
 
         // 스킬 이름 추출
@@ -74,6 +74,6 @@ public sealed class SkillInfoPacket : Packet
         int additionalValue = content[..4].from_bytes<int>("little");
 
         // 4바이트 패딩 건너뛰기
-        return new SkillInfoPacket(usedBy, target, action, skillName);
+        return new SkillInfoPacket(usedBy, target, owner, skillName);
     }
 }

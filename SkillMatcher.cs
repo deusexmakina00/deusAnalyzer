@@ -50,6 +50,11 @@ public enum SkillType
 
     /// <summary>도트 스킬 (지속 피해)</summary>
     Dot,
+
+    /// <summary>
+    /// 설치형 스킬 (설치 후 일정 시간 동안 유지)
+    /// </summary>
+    Installation,
 }
 
 /// <summary>
@@ -69,6 +74,7 @@ public record ActiveSkillInfo(
     string UsedBy,
     string OriginalTarget,
     string CurrentTarget,
+    string NextTarget,
     string SkillName,
     SkillState State,
     SkillType Type,
@@ -87,6 +93,7 @@ public record ActiveSkillInfo(
         string usedBy,
         string originalTarget,
         string currentTarget,
+        string nextTarget,
         string skillName,
         SkillState state,
         SkillType type,
@@ -99,6 +106,7 @@ public record ActiveSkillInfo(
             usedBy,
             originalTarget,
             currentTarget,
+            nextTarget,
             skillName,
             state,
             type,
@@ -215,6 +223,14 @@ public record ActiveSkillInfo(
     }
 }
 
+public record InstallationInfo(
+    string InstallationId, // UsedBy(설치물 ID)
+    string Owner, // Owner (실제 소유자)
+    string Target, // Target (공격 대상)
+    string SkillName, // SkillName (설치물 스킬 이름)
+    DateTime RegisteredAt // RegisteredAt (설치 시간)
+);
+
 /// <summary>
 /// 스킬 매칭 결과를 나타내는 레코드
 /// </summary>
@@ -229,6 +245,12 @@ public readonly record struct SkillMatchResult(string Key, ActiveSkillInfo? Skil
 public sealed class SkillMatcher
 {
     private static readonly Logger logger = LogManager.GetCurrentClassLogger();
+
+    // 설치물 정보 관리
+    private readonly ConcurrentDictionary<string, List<InstallationInfo>> _installationsByOwner =
+        new ConcurrentDictionary<string, List<InstallationInfo>>();
+    private readonly ConcurrentDictionary<string, List<InstallationInfo>> _installationsByTarget =
+        new ConcurrentDictionary<string, List<InstallationInfo>>();
 
     // 스킬 상태 관리
     private readonly ConcurrentDictionary<string, ActiveSkillInfo> _castingSkills = new();
@@ -247,19 +269,32 @@ public sealed class SkillMatcher
     /// <summary>
     /// 두 Target 값이 매칭되는지 확인합니다 (유연한 매칭)
     /// </summary>
-    private bool IsTargetMatch(string skillTarget, string damageTarget)
+    private bool IsTargetMatch(string skillTarget, string skillNextTarget, string damageTarget)
     {
-        // 둘 중 하나가 00000000이면 매칭
+        // 정확히 일치하면 매칭
+        if (skillTarget == damageTarget || skillNextTarget == damageTarget)
+            return true;
+
+        // 둘 중 하나가 특수 값이면 매칭 (광역/전체 공격)
         if (
             skillTarget == "00000000"
             || damageTarget == "00000000"
             || damageTarget == "ffffffff"
             || skillTarget == "ffffffff"
+            || skillNextTarget == "00000000"
+            || skillNextTarget == "ffffffff"
         )
             return true;
 
-        // 정확히 일치하면 매칭
-        return skillTarget == damageTarget;
+        return false;
+    }
+
+    /// <summary>
+    /// 기존 IsTargetMatch (하위 호환성)
+    /// </summary>
+    private bool IsTargetMatch(string skillTarget, string damageTarget)
+    {
+        return IsTargetMatch(skillTarget, "00000000", damageTarget);
     }
 
     /// <summary>
@@ -397,24 +432,28 @@ public sealed class SkillMatcher
         var (baseName, state, type) = ParseSkillName(skillAction.ActionName);
         var skillKey = GetSkillKey(baseName, lastAt);
 
-        if (state == SkillState.Casting)
+        if (state != SkillState.Instant)
         {
-            var skillInfo = ActiveSkillInfo.Create(
-                skillAction.UsedBy,
-                skillAction.Target,
-                skillAction.Target,
-                baseName,
-                state,
-                type,
-                lastAt,
-                lastAt
-            );
-            _castingSkills[skillKey] = skillInfo;
-            logger.Info($"[SkillMatcher] Started skill: {baseName} Key: {skillKey}");
-        }
-        else if (state == SkillState.Ending)
-        {
-            UpdateSkillState(skillKey, skillAction, state, lastAt);
+            if (_castingSkills.TryGetValue(skillKey, out var existingSkill))
+            {
+                UpdateSkillState(skillKey, skillAction, state, lastAt);
+            }
+            else
+            {
+                var skillInfo = ActiveSkillInfo.Create(
+                    skillAction.UsedBy,
+                    skillAction.Target,
+                    skillAction.Target,
+                    skillAction.NextTarget,
+                    baseName,
+                    state,
+                    type,
+                    lastAt,
+                    lastAt
+                );
+                _castingSkills[skillKey] = skillInfo;
+                logger.Info($"[SkillMatcher] Started skill: {baseName} Key: {skillKey}");
+            }
         }
         else if (state == SkillState.Instant)
         {
@@ -428,6 +467,7 @@ public sealed class SkillMatcher
                 skillAction.UsedBy,
                 skillAction.Target,
                 skillAction.Target,
+                skillAction.NextTarget,
                 baseName,
                 state,
                 type,
@@ -441,8 +481,62 @@ public sealed class SkillMatcher
         }
     }
 
+    /// <summary>
+    /// 구조적 특성으로 설치물인지 판단 (이름 의존성 제거) ✅
+    /// </summary>
+    private bool IsInstallationSkill(SkillInfoPacket skillInfo)
+    {
+        return skillInfo.UsedBy != skillInfo.Owner
+            && // 서로 다른 ID
+            skillInfo.Owner != "00000000"
+            && // 유효한 소유자
+            !string.IsNullOrEmpty(skillInfo.Target)
+            && // 유효한 대상
+            skillInfo.UsedBy.Length == 8; // 설치물 ID 길이 패턴
+    }
+
+    /// <summary>
+    /// 설치물 정보 등록
+    /// </summary>
+    private void RegisterInstallation(SkillInfoPacket skillInfo, DateTime lastAt)
+    {
+        var installation = new InstallationInfo(
+            skillInfo.UsedBy, // 설치물 ID
+            skillInfo.Owner, // 실제 소유자
+            skillInfo.Target, // 공격 대상
+            skillInfo.SkillName, // 설치물 스킬명
+            lastAt
+        );
+
+        // 소유자별 인덱싱 ✅
+        if (!_installationsByOwner.TryGetValue(skillInfo.Owner, out var ownerList))
+        {
+            ownerList = new List<InstallationInfo>();
+            _installationsByOwner[skillInfo.Owner] = ownerList;
+        }
+        ownerList.Add(installation);
+
+        // 대상별 인덱싱 ✅
+        if (!_installationsByTarget.TryGetValue(skillInfo.Target, out var targetList))
+        {
+            targetList = new List<InstallationInfo>();
+            _installationsByTarget[skillInfo.Target] = targetList;
+        }
+        targetList.Add(installation);
+
+        logger.Info(
+            $"[SkillMatcher] Registered installation: {skillInfo.SkillName} "
+                + $"InstallationId: {skillInfo.UsedBy} Owner: {skillInfo.Owner} Target: {skillInfo.Target}"
+        );
+    }
+
     public void EnqueueSkillInfo(SkillInfoPacket skill, DateTime lastAt)
     {
+        if (IsInstallationSkill(skill))
+        {
+            RegisterInstallation(skill, lastAt);
+            return;
+        }
         var (baseSkillName, state, type) = ParseSkillName(skill.SkillName);
 
         if (state == SkillState.Idle)
@@ -491,6 +585,7 @@ public sealed class SkillMatcher
                 skill.UsedBy,
                 skill.Target,
                 skill.Target,
+                skill.Target,
                 baseSkillName,
                 state,
                 type,
@@ -516,6 +611,7 @@ public sealed class SkillMatcher
             skillKey = GetSkillKey(skill.UsedBy, lastAt);
             var skillInfo = new ActiveSkillInfo(
                 skill.UsedBy,
+                skill.Target,
                 skill.Target,
                 skill.Target,
                 baseSkillName,
@@ -559,6 +655,15 @@ public sealed class SkillMatcher
         {
             case SkillState.Targeting:
                 targetingCount++;
+                // ✅ 자동 타입 전환: Casting → TargetCasting
+                if (existingSkill.Type == SkillType.Casting)
+                {
+                    existingSkill = existingSkill.WithType(SkillType.TargetCasting, receivedAt);
+                    logger.Info(
+                        $"[SkillMatcher] Auto-converted skill type: {existingSkill.SkillName} "
+                            + $"Casting → TargetCasting (First Targeting detected)"
+                    );
+                }
                 break;
 
             case SkillState.Hit:
@@ -652,7 +757,17 @@ public sealed class SkillMatcher
             damagePacket.SkillName = channelingMatch.Value.Skill?.SkillName ?? "";
             return damagePacket;
         }
-        // 3. 즉시 스킬 매칭 시도 (순차적 매칭)
+        // 3. 설치물 스킬 매칭 시도 ✅ (즉시 스킬보다 우선)
+        var installationMatch = TryMatchInstallationByData(damagePacket, lastAttackTime);
+        if (installationMatch.HasValue)
+        {
+            logger.Info(
+                $"[SkillMatcher] Installation skill matched: [{installationMatch.Value.Key}] {installationMatch.Value.Skill?.SkillName} for damage {damagePacket.Damage}"
+            );
+            damagePacket.SkillName = installationMatch.Value.Skill?.SkillName ?? "";
+            return damagePacket;
+        }
+        // 4. 활성 스킬 매칭 시도 (기존 활성 스킬에서)
         var instantMatch = TryMatchInstantSkillSequential(damagePacket, lastAttackTime);
         if (instantMatch.HasValue)
         {
@@ -722,6 +837,69 @@ public sealed class SkillMatcher
         return new SkillMatchResult(match.Key?.ToString() ?? "", match.Value);
     }
 
+    private SkillMatchResult? TryMatchInstallationByData(
+        SkillDamagePacket damagePacket,
+        DateTime lastAttackTime
+    )
+    {
+        InstallationInfo? matchedInstallation = null;
+
+        // 1차 매칭: Owner + Target 기준 ✅
+        if (_installationsByOwner.TryGetValue(damagePacket.UsedBy, out var ownerInstallations))
+        {
+            matchedInstallation = ownerInstallations
+                .Where(inst => inst.Target == damagePacket.Target) // 대상도 일치
+                .Where(inst =>
+                    Math.Abs((lastAttackTime - inst.RegisteredAt).TotalMilliseconds) <= 30000
+                )
+                .OrderByDescending(inst => inst.RegisteredAt)
+                .FirstOrDefault();
+        }
+
+        // 2차 매칭: Target 기준으로 확장 검색
+        if (
+            matchedInstallation == null
+            && _installationsByTarget.TryGetValue(damagePacket.Target, out var targetInstallations)
+        )
+        {
+            matchedInstallation = targetInstallations
+                .Where(inst => inst.Owner == damagePacket.UsedBy) // 소유자 일치
+                .Where(inst =>
+                    Math.Abs((lastAttackTime - inst.RegisteredAt).TotalMilliseconds) <= 30000
+                )
+                .OrderByDescending(inst => inst.RegisteredAt)
+                .FirstOrDefault();
+        }
+
+        if (matchedInstallation != null)
+        {
+            logger.Info(
+                $"[SkillMatcher] Installation matched by data: {matchedInstallation.SkillName} "
+                    + $"InstallationId: {matchedInstallation.InstallationId} "
+                    + $"Owner: {matchedInstallation.Owner} Target: {matchedInstallation.Target} "
+                    + $"TimeDiff: {Math.Abs((lastAttackTime - matchedInstallation.RegisteredAt).TotalMilliseconds):F0}ms"
+            );
+
+            // 가상의 ActiveSkillInfo 생성 (설치물용)
+            var skillInfo = ActiveSkillInfo.Create(
+                matchedInstallation.Owner, // 실제 소유자
+                matchedInstallation.Target, // 대상
+                matchedInstallation.Target, // 현재 대상
+                "00000000", // NextTarget
+                matchedInstallation.SkillName,
+                SkillState.Instant,
+                SkillType.Installation,
+                matchedInstallation.RegisteredAt,
+                lastAttackTime
+            );
+
+            var skillKey = $"{matchedInstallation.SkillName}_{matchedInstallation.InstallationId}";
+            return new SkillMatchResult(skillKey, skillInfo);
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// 캐스팅 스킬 매칭을 시도합니다
     /// </summary>
@@ -742,24 +920,34 @@ public sealed class SkillMatcher
         // 1. 채널링 패턴: Casting 상태에서 Damage가 들어오면 Channeling으로 전이
         var channelingCandidate = _castingSkills
             .Where(kvp =>
-                IsTargetMatch(kvp.Value.CurrentTarget, damageTarget)
-                && kvp.Value.UsedBy == damagePacket.UsedBy
+                kvp.Value.UsedBy == damagePacket.UsedBy
                 && kvp.Value.Type == SkillType.Casting
                 && kvp.Value.State == SkillState.Casting
+                && (
+                    IsTargetMatch(kvp.Value.CurrentTarget, kvp.Value.NextTarget, damageTarget)
+                    || // NextTarget 매칭 지원! ✅
+                    Math.Abs((lastAttackTime - kvp.Value.LastStateTime).TotalMilliseconds) <= 3000
+                ) // 시간 기반 매칭
             )
             .OrderBy(kvp => Math.Abs((lastAttackTime - kvp.Value.LastStateTime).TotalMilliseconds))
             .FirstOrDefault();
 
         if (channelingCandidate.Value != null)
         {
-            _castingSkills[channelingCandidate.Key] = channelingCandidate.Value.WithType(
-                SkillType.Channeling,
-                lastAttackTime
-            );
+            var updatedSkill = channelingCandidate
+                .Value.WithType(SkillType.Channeling, lastAttackTime)
+                .WithTarget(damageTarget, lastAttackTime);
+            _castingSkills[channelingCandidate.Key] = updatedSkill;
             logger.Info(
-                $"[SkillMatcher] Casting skill changed to Channeling: {channelingCandidate.Value.SkillName} UsedBy: {channelingCandidate.Value.UsedBy} Target: {channelingCandidate.Value.CurrentTarget}"
+                $"[SkillMatcher] Casting skill changed to Channeling: {channelingCandidate.Value.SkillName} "
+                    + $"UsedBy: {channelingCandidate.Value.UsedBy} "
+                    + $"Target: {channelingCandidate.Value.CurrentTarget} → {damageTarget} "
+                    + $"NextTarget: {channelingCandidate.Value.NextTarget} "
+                    + // ✅ NextTarget 로깅 추가
+                    $"TimeDiff: {Math.Abs((lastAttackTime - channelingCandidate.Value.LastStateTime).TotalMilliseconds):F0}ms"
             );
-            return null; // 채널링으로 전이되었으므로 null 반환
+            // 채널링으로 전환되었으므로 즉시 채널링 매칭 결과 반환 ✅
+            return new SkillMatchResult(channelingCandidate.Key, updatedSkill);
         }
         // 2. 타게팅 캐스팅 패턴: TargetCasting + Ending 상태에서만 매칭
         var targetingCandidate = _castingSkills
@@ -768,7 +956,7 @@ public sealed class SkillMatcher
                 && kvp.Value.UsedBy == damagePacket.UsedBy
                 && !kvp.Value.IsUsing
                 && kvp.Value.Type == SkillType.TargetCasting
-                && kvp.Value.State == SkillState.Ending
+                && (kvp.Value.State == SkillState.Targeting || kvp.Value.State == SkillState.Ending)
             )
             .OrderBy(kvp => Math.Abs((lastAttackTime - kvp.Value.LastStateTime).TotalMilliseconds))
             .FirstOrDefault();
@@ -780,39 +968,57 @@ public sealed class SkillMatcher
                 lastAttackTime
             );
             logger.Info(
-                $"[SkillMatcher] TargetCasting skill matched: {targetingCandidate.Value.SkillName} UsedBy: {targetingCandidate.Value.UsedBy} Target: {targetingCandidate.Value.CurrentTarget}"
+                $"[SkillMatcher] TargetCasting skill matched: {targetingCandidate.Value.SkillName} "
+                    + $"UsedBy: {targetingCandidate.Value.UsedBy} Target: {targetingCandidate.Value.CurrentTarget} "
+                    + $"State: {targetingCandidate.Value.State} TargetingCount: {targetingCandidate.Value.TargetingCount}"
             );
             return new SkillMatchResult(targetingCandidate.Key, targetingCandidate.Value);
-        } // 3. 일반 Casting 스킬 정리 로직 (PlasmaShroud 등)
-        // Casting → End 패턴에서 End 상태의 일반 Casting 스킬은 완료된 것으로 간주
-        var completedCastingSkills = _castingSkills
+        }
+        // 3. Lazy Casting 매칭 + 지연 정리 (수정됨!) ✅
+        var lazyCastingCandidates = _castingSkills
             .Where(kvp =>
                 kvp.Value.UsedBy == damagePacket.UsedBy
-                && kvp.Value.Type == SkillType.Casting // ← 일반 Casting 스킬만
+                && kvp.Value.Type == SkillType.Casting
                 && kvp.Value.State == SkillState.Ending
                 && !kvp.Value.IsUsing
             )
             .ToList();
 
-        foreach (var completedSkill in completedCastingSkills)
+        foreach (var candidate in lazyCastingCandidates)
         {
             var timeDiff = Math.Abs(
-                (lastAttackTime - completedSkill.Value.LastStateTime).TotalMilliseconds
+                (lastAttackTime - candidate.Value.LastStateTime).TotalMilliseconds
             );
-
-            // End 후 충분한 시간이 지났으면 완료된 것으로 간주하고 정리
-            if (timeDiff > 500) // 0.5초 후 정리 (Instant 스킬 등록 시간 고려)
+            // A. 타겟 매칭되는 스킬이 있다면 매칭 시도
+            if (IsTargetMatch(candidate.Value.CurrentTarget, damageTarget))
             {
-                _castingSkills.TryRemove(completedSkill.Key, out _);
+                // Lazy Casting은 더 긴 시간 허용 (지연된 데미지 패턴)
+                if (timeDiff <= 5000) // 5초 이내 매칭 허용
+                {
+                    _castingSkills[candidate.Key] = candidate.Value.WithUsing(true, lastAttackTime);
+                    logger.Info(
+                        $"[SkillMatcher] Lazy Casting skill matched: {candidate.Value.SkillName} "
+                            + $"UsedBy: {candidate.Value.UsedBy} Target: {candidate.Value.CurrentTarget} "
+                            + $"NextTarget: {candidate.Value.NextTarget} "
+                            + // ✅ NextTarget 로깅
+                            $"TimeDiff: {timeDiff:F0}ms"
+                    );
+                    return new SkillMatchResult(candidate.Key, candidate.Value);
+                }
+            }
+            // B. 매칭되지 않거나 시간 초과된 스킬들 정리
+            if (timeDiff > 5000) // 5초 후 정리 (지연 데미지 고려)
+            {
+                _castingSkills.TryRemove(candidate.Key, out _);
                 logger.Info(
-                    $"[SkillMatcher] Cleaned up completed casting skill: {completedSkill.Value.SkillName} "
-                        + $"(End: {completedSkill.Value.LastStateTime:HH:mm:ss.fff}, Now: {lastAttackTime:HH:mm:ss.fff})"
+                    $"[SkillMatcher] Cleaned up expired lazy casting skill: {candidate.Value.SkillName} "
+                        + $"(End: {candidate.Value.LastStateTime:HH:mm:ss.fff}, TimeDiff: {timeDiff:F0}ms)"
                 );
             }
-            else
+            else if (timeDiff > 1000) // 1초 후부터 대기 상태 로깅
             {
                 logger.Debug(
-                    $"[SkillMatcher] Completed casting skill waiting for cleanup: {completedSkill.Value.SkillName} "
+                    $"[SkillMatcher] Lazy casting skill waiting for damage: {candidate.Value.SkillName} "
                         + $"(TimeDiff: {timeDiff:F0}ms)"
                 );
             }

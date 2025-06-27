@@ -32,6 +32,10 @@ public sealed class PacketCaptureManager : IDisposable
     {
         if (_webSocketServer is not null)
         {
+            if (damage.SkillName == "")
+            {
+                damage.SkillName = damage.Flags.GenerateSkillName();
+            }
             logger.Info(
                 $"[Capture][{damage.SkillName}] Damage found: {damage.Damage} (UsedBy: {damage.UsedBy}, Target: {damage.Target})"
             );
@@ -167,7 +171,7 @@ public sealed class PacketCaptureManager : IDisposable
             {
                 var allPackets = PacketExtractor.ExtractPackets(data);
 
-                PacketExtractor.SavePacketsToFiles(allPackets, "C:\\Packets", _lastAt, _lastRelSeq);
+                //PacketExtractor.SavePacketsToFiles(allPackets, "C:\\Packets", _lastAt, _lastRelSeq);
                 int maxProcessedEnd = 0;
                 int processedCount = 0;
 
@@ -199,7 +203,7 @@ public sealed class PacketCaptureManager : IDisposable
                             {
                                 // 버프 스킬 스킵
                                 logger.Debug(
-                                    $"Skipping self-targeted skill: {skillAction.SkillName} (UsedBy: {skillAction.UsedBy})"
+                                    $"Skipping self-targeted skill: {skillAction.ActionName} (UsedBy: {skillAction.UsedBy})"
                                 );
                                 continue;
                             }
