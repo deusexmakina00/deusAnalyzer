@@ -1,0 +1,66 @@
+# Docker 빌드 시 제외할 파일들
+.dockerignore
+
+# Git 관련
+.git
+.gitignore
+.gitattributes
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+
+# Build artifacts
+bin/
+obj/
+out/
+dist/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# 테스트 결과
+TestResults/
+*.trx
+*.coverage
+
+# 로그 파일
+*.log
+logs/
+
+# 환경 설정
+.env
+.env.local
+.env.production
+
+# 임시 파일
+*.tmp
+*.temp
+*~
+
+# OS 생성 파일
+.DS_Store
+Thumbs.db
+
+# IDE
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+CHANGELOG.md
+LICENSE
+*.md
+
+# 개발 도구
+*.ps1
+*.sh
+*.bat
+*.cmd

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="데미지 미터">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#007bff">
+    <title>데미지 미터 - 실시간 전투 분석</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 헤더 -->
+    <header class="header">
+        <div class="header-content">
+            <h1 class="title">⚔️ 모바노기 데미지 미터</h1>
+            <div class="header-controls">
+                <button id="theme-toggle" class="theme-toggle" title="테마 변경">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <div class="connection-status">
+                    <span id="ws-status">🔴 연결 대기중</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨테이너 -->
+    <main class="main-container">
+        <!-- 좌측 패널 - 컨트롤 및 필터 -->
+        <aside class="left-panel">
+            <!-- 전투 정보 카드 -->
+            <div class="card battle-info">
+                <h3>⚔️ 전투 정보</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">전투 시간</span>
+                        <span id="battle-time" class="info-value">0초</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">총 데미지</span>
+                        <span id="total-damage" class="info-value">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">총 DPS</span>
+                        <span id="total-dps" class="info-value">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">세션 상태</span>
+                        <span id="session-status" class="info-value">⚪ 대기중</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 필터 컨트롤 -->
+            <div class="card filters">
+                <h3>🔧 필터 설정</h3>
+                <div class="filter-group">
+                    <label for="skill-filter">스킬 검색</label>
+                    <input type="text" id="skill-filter" placeholder="스킬명 입력..." 
+                           onkeyup="app.updateFilter()">
+                </div>
+                <div class="filter-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="filter-dot">
+                        <span class="checkbox-custom"></span>
+                        도트 데미지 제외
+                    </label>
+                </div>
+                <div class="filter-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="auto-reset" checked>
+                        <span class="checkbox-custom"></span>
+                        자동 세션 초기화
+                    </label>
+                </div>
+            </div>
+
+            <!-- 타겟 선택 -->
+            <div class="card target-selection">
+                <h3>🎯 타겟 선택</h3>
+                <div class="selection-display">
+                    <span id="selected-target-display">전체 타겟</span>
+                    <button onclick="app.clearSelectedTarget()" class="clear-btn" title="선택 해제">✕</button>
+                </div>
+                <div id="target-list-container" class="selection-list-container">
+                    <div id="target-list" class="selection-list">
+                        <div class="no-data-message">타겟 데이터를 기다리는 중...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 사용자 선택 -->
+            <div class="card user-selection">
+                <h3>👤 사용자 선택</h3>
+                <div class="selection-display">
+                    <span id="selected-user-display">전체 사용자</span>
+                    <button onclick="app.clearSelectedUser()" class="clear-btn" title="선택 해제">✕</button>
+                </div>
+                <div id="user-list-container" class="selection-list-container">
+                    <div id="user-list" class="selection-list">
+                        <div class="no-data-message">사용자 데이터를 기다리는 중...</div>
+                    </div>
+                </div>
+            </div>            <!-- 프로필 관리 -->
+            <div class="card profile-management">
+                <h3>📁 프로필 관리</h3>
+                <div class="profile-controls">
+                    <div class="input-group">
+                        <input type="text" id="profile-name" placeholder="프로필 이름 입력..." maxlength="50">
+                        <button id="save-profile-btn" class="btn btn-primary">💾 저장</button>
+                    </div>
+                    
+                    <div class="comparison-controls">
+                        <div class="select-group">
+                            <select id="compare-profile-select">
+                                <option value="">비교할 프로필 선택</option>
+                            </select>
+                        </div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="compare-toggle">
+                            <span class="checkbox-custom"></span>
+                            비교 모드
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 컨트롤 버튼 -->
+            <div class="card controls">
+                <h3>🎮 컨트롤</h3>
+                <div class="button-group">
+                    <button onclick="app.resetData()" class="btn btn-danger">🔄 데이터 초기화</button>
+                    <button onclick="app.generateTestData()" class="btn btn-info">🧪 테스트 데이터</button>
+                    <button onclick="app.exportCSV()" class="btn btn-success">📊 CSV 내보내기</button>
+                    <button onclick="app.saveData()" class="btn btn-secondary">� JSON 백업</button>
+                    <button onclick="app.loadData()" class="btn btn-secondary">📂 JSON 불러오기</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 중앙 패널 - 메인 콘텐츠 -->
+        <section class="center-panel">            <!-- 탭 네비게이션 -->
+            <div class="tab-navigation">
+                <button class="tab-btn active" data-tab="statistics">📊 통계</button>
+                <button class="tab-btn" data-tab="logs">� 로그</button>
+                <button class="tab-btn" data-tab="ranking">🏆 랭킹</button>
+                <button class="tab-btn" data-tab="profiles">📁 프로필</button>
+            </div>            <!-- 통계 탭 -->
+            <div id="statistics-tab" class="tab-content active">
+                <div class="card">
+                    <h3>📊 상세 통계</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-label">총 타격 수</span>
+                            <span id="total-hits" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">평균 데미지</span>
+                            <span id="avg-damage" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">크리티컬 횟수</span>
+                            <span id="total-crits" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">크리티컬 확률</span>
+                            <span id="crit-rate" class="stat-value">0%</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">추가타 횟수</span>
+                            <span id="total-add-hits" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">추가타 확률</span>
+                            <span id="add-hit-rate" class="stat-value">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 스킬별 통계 -->
+                <div class="card">
+                    <h3>🎯 스킬별 데미지 분석</h3>
+                    <div id="skill-bars-container" class="skill-bars-container">
+                        <div class="no-data-message">스킬 데이터를 기다리는 중...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 로그 탭 -->
+            <div id="logs-tab" class="tab-content">
+                <div class="card">
+                    <h3>📋 실시간 로그</h3>
+                    <div id="log-container" class="log-container">
+                        <div class="no-data-message">
+                            <div style="font-size: 48px; margin-bottom: 16px;">📋</div>
+                            <div style="font-size: 18px;">로그 데이터가 없습니다</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 랭킹 탭 -->
+            <div id="ranking-tab" class="tab-content">
+                <div class="card">
+                    <h3>🏆 사용자 랭킹</h3>
+                    <div id="ranking-list" class="ranking-container">
+                        <div class="no-data-message">랭킹 데이터를 기다리는 중...</div>
+                    </div>
+                </div>
+            </div>            <!-- 프로필 탭 -->
+            <div id="profiles-tab" class="tab-content">
+                <div class="card">
+                    <h3>📁 저장된 프로필</h3>
+                    <div id="profile-list" class="profile-list">
+                        <div class="no-data-message">저장된 프로필이 없습니다.</div>
+                    </div>
+                </div>
+                
+                <!-- 비교 모드가 활성화된 경우 비교 결과 표시 -->
+                <div id="comparison-result" class="card" style="display: none;">
+                    <h3>🔄 프로필 비교</h3>
+                    <div class="comparison-container">
+                        <div class="comparison-summary">
+                            <div class="comparison-item">
+                                <span class="comparison-label">현재 프로필</span>
+                                <span id="current-profile-name" class="comparison-value">-</span>
+                            </div>
+                            <div class="comparison-item">
+                                <span class="comparison-label">비교 프로필</span>
+                                <span id="compare-profile-name" class="comparison-value">-</span>
+                            </div>
+                        </div>
+                        <div id="comparison-details" class="comparison-details">
+                            <!-- 비교 결과가 여기에 표시됩니다 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 데이터 저장/불러오기를 위한 숨겨진 파일 입력 -->
+    <input type="file" id="file-input" accept=".json" style="display: none;">    <!-- 스크립트 -->
+    <script src="translation.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

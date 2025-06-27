@@ -1,0 +1,102 @@
+# 🐳 Docker Compose 구성 파일
+# 패킷 캡처 서버를 위한 완전한 컨테이너 환경
+
+version: '3.8'
+
+services:
+  # 메인 패킷 캡처 서버
+  packet-capture-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: packet-capture-server:latest
+    container_name: packet-capture-server
+    
+    # 네트워크 설정 (패킷 캡처를 위해 host 모드 사용)
+    network_mode: host
+    
+    # 권한 설정 (패킷 캡처를 위해 필요)
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    
+    # 포트 매핑 (host 모드에서는 자동)
+    # ports:
+    #   - "8080:8080"     # 웹 서버
+    #   - "9001:9001"     # WebSocket 서버
+    #   - "16000:16000"   # 패킷 캡처 포트
+    
+    # 환경 변수
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - ASPNETCORE_URLS=http://+:8080
+      - PACKET_CAPTURE_PORT=16000
+      - WEB_SERVER_PORT=8080
+      - WEBSOCKET_SERVER_PORT=9001
+      - TZ=Asia/Seoul
+    
+    # 볼륨 마운트
+    volumes:
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+      - ./wwwroot:/app/wwwroot:ro
+    
+    # 재시작 정책
+    restart: unless-stopped
+    
+    # 헬스체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # 로그 설정
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 선택사항: 웹 UI를 위한 nginx 프록시
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   container_name: packet-capture-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - packet-capture-server
+  #   restart: unless-stopped
+
+# 네트워크 설정 (host 모드 사용 시 불필요)
+# networks:
+#   packet-capture-network:
+#     driver: bridge
+#     ipam:
+#       config:
+#         - subnet: 172.20.0.0/16
+
+# 볼륨 설정
+volumes:
+  packet-capture-logs:
+    driver: local
+  packet-capture-config:
+    driver: local

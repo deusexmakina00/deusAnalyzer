@@ -1,0 +1,61 @@
+# 크로스 플랫폼 패킷 캡처 서버 - 구성 파일
+
+## 네트워크 설정
+TARGET_PORT=16000
+WEB_SERVER_PORT=8080
+WEBSOCKET_PORT=9001
+BIND_ADDRESS=0.0.0.0  # 모든 네트워크 인터페이스에서 접근 가능
+
+## 로깅 설정
+LOG_LEVEL=Info
+LOG_FILE=mdm2.log
+
+## 패킷 캡처 설정
+BUFFER_SIZE=3145728  # 3MB
+PACKET_TIMEOUT=5000  # 5초
+CAPTURE_MODE=MULTI_INTERFACE  # 다중 인터페이스 캡처
+
+## 다중 인터페이스 캡처 정책
+# 우선순위:
+# 1. 기본 게이트웨이가 있는 이더넷 (최우선)
+# 2. 기타 이더넷 (브랜드별 우선순위)
+#    - Marvell/Aquantia: 100점 (10Gbit)
+#    - Realtek: 80점 (일반 메인보드)
+#    - Intel: 60점 (서버급)
+#    - 기타: 40점
+# 3. Wi-Fi (이더넷이 없는 경우만)
+# 4. 기타 네트워크 인터페이스
+
+## 지원하는 데이터 타입
+SKILL_PACKET_TYPES=10446,100041
+DAMAGE_PACKET_TYPES=10701,100088
+
+## 플랫폼별 참고사항
+
+### Windows
+- Npcap 설치 필요: https://npcap.com/
+- 관리자 권한으로 실행
+- 방화벽 예외 설정 권장
+
+### Linux
+- libpcap-dev 설치 필요
+- root 권한으로 실행
+- setcap 명령으로 권한 부여 가능
+
+### macOS
+- 시스템 기본 libpcap 사용
+- root 권한으로 실행
+- Xcode Command Line Tools 권장
+
+## 보안 설정
+ENABLE_BINARY_OBFUSCATION=true  # 바이너리 노이즈 생성 활성화
+RANDOM_TITLE_INTERVAL=100        # 콘솔 타이틀 변경 간격 (ms)
+NOISE_SIZE_MIN=1                 # 최소 노이즈 크기 (바이트)
+NOISE_SIZE_MAX=16                # 최대 노이즈 크기 (바이트)
+FILENAME_LENGTH=10               # 랜덤 파일명 길이
+
+## 보안 정책
+# - 실행 시 원본 파일의 복사본 생성
+# - 복사본에 랜덤 노이즈 추가로 해시 변경
+# - 원본 프로세스 종료 후 복사본만 실행
+# - Windows에서 콘솔 타이틀 실시간 변경
