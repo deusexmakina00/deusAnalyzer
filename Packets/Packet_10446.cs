@@ -34,7 +34,8 @@ public sealed class SkillInfoPacket : Packet
         SkillName = skillName ?? throw new ArgumentNullException(nameof(skillName));
     }
 
-    public override string ToString() => $"{UsedBy} {Target} : {SkillName}";
+    public override string ToString() =>
+        $"{UsedBy} -> {Target} | Action: {Action} | Skill Name: {SkillName}";
 
     /// <summary>
     /// ReadOnlySpan을 사용한 고성능 스킬 패킷 파싱

@@ -35,5 +35,5 @@ public sealed class Packet_10739 : Packet
     }
 
     public override string ToString() =>
-        $"{UsedBy} | Skill: {SkillName} | Value: {AdditionalValue}";
+        $"{UsedBy} | 스킬 이름: {SkillName} | 추가 값: {AdditionalValue}";
 }

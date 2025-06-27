@@ -48,7 +48,8 @@ public sealed class SkillActionPacket : Packet
         ActionName = actionName ?? throw new ArgumentNullException(nameof(actionName));
     }
 
-    public override string ToString() => $"{UsedBy} {Target} : {ActionName}";
+    public override string ToString() =>
+        $"{UsedBy} -> {Target} | Action: {Action} | Cast Time: {CastTime}s | Next Target: {NextTarget} | Action Name: {ActionName}";
 
     public static SkillActionPacket Parse(ReadOnlySpan<byte> content)
     {

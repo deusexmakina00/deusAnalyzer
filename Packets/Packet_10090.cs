@@ -11,6 +11,8 @@ public sealed class Packet_10090 : Packet
         UsedBy = usedBy ?? throw new ArgumentNullException(nameof(usedBy));
     }
 
+    public override string ToString() => $"{UsedBy}";
+
     public static Packet_10090 Parse(ReadOnlySpan<byte> content)
     {
         if (content.Length < 8)

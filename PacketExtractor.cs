@@ -94,7 +94,20 @@ public static class PacketExtractor
         return filteredPackets;
     }
 
-    private static int[] Excludes = [100252, 10318, 1694498816];
+    private static int[] Excludes =
+    [
+        100252,
+        10318,
+        100600, // 상태 모니터링 패킷일 가능성 높음.
+        100177, // 타겟과 관련
+        100044, // 타겟과 관련
+        100081, // 타겟과 관련
+        100180, // 타겟과 관련
+        100317, // 타겟과 관련,
+        100047, // 동기화?
+        100093, // 시스템
+        100085, // 시스템
+    ];
 
     /// <summary>
     /// 바이트 배열에서 모든 유효한 패킷을 추출합니다.
@@ -302,7 +315,7 @@ public static class PacketExtractor
 
             // 16진수 덤프 파일 저장
             string hexDumpPath = Path.Combine(fullDirectory, "packets_hexdump.txt");
-            string hexDump = CreatePacketsHexDump(packets);
+            string hexDump = CreatePacketsHexDump(packets, sequenceNumber, timestamp);
             File.WriteAllText(hexDumpPath, hexDump);
             savedFiles.Add(hexDumpPath);
 
@@ -424,7 +437,7 @@ public static class PacketExtractor
     /// </summary>
     /// <param name="packets">패킷 목록</param>
     /// <returns>16진수 덤프 문자열</returns>
-    private static string CreatePacketsHexDump(List<ExtractedPacket> packets)
+    private static string CreatePacketsHexDump(List<ExtractedPacket> packets, uint seq, DateTime at)
     {
         var sb = new StringBuilder();
         sb.AppendLine("=== 패킷 16진수 덤프 ===");
@@ -438,7 +451,7 @@ public static class PacketExtractor
                 : $"{packet.DataType}";
 
             sb.AppendLine($"=== 패킷 {i:D3}: 타입 0x{packet.DataType:X8} ({typeName}) ===");
-            sb.AppendLine(HexDump(packet));
+            sb.AppendLine(HexDump(packet, seq, at));
             sb.AppendLine();
         }
 
@@ -459,19 +472,24 @@ public static class PacketExtractor
 
     /// <summary>
     /// 패킷 페이로드를 16진수 덤프 형태로 출력합니다.
-    /// </summary>
+    /// </summary>s
     /// <param name="packet">덤프할 패킷</param>
     /// <param name="bytesPerLine">한 줄에 출력할 바이트 수</param>
     /// <returns>16진수 덤프 문자열</returns>
-    public static string HexDump(ExtractedPacket packet, int bytesPerLine = 16)
+    public static string HexDump(
+        ExtractedPacket packet,
+        uint seq,
+        DateTime at,
+        int bytesPerLine = 16
+    )
     {
         var payload = packet.Payload;
         var dump = new StringBuilder();
         string typeName = typeMap.TryGetValue(packet.DataType, out var name)
             ? name
             : $"{packet.DataType}";
-        dump.AppendLine($"Sequence: {packet.RelSeq}");
-        dump.AppendLine($"Received: {packet.At:yyyy-MM-dd HH:mm:ss.fff}");
+        dump.AppendLine($"Sequence: {seq}");
+        dump.AppendLine($"Received: {at:yyyy-MM-dd HH:mm:ss.fff}");
         dump.AppendLine($"DataType: 0x{packet.DataType:X8} ({typeName})");
         dump.AppendLine($"Length: {packet.DataLength} bytes");
         dump.AppendLine($"EncodeType: {packet.EncodeType}");

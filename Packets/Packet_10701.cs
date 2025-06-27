@@ -63,7 +63,7 @@ public sealed partial class SkillDamagePacket : Packet
     }
 
     public override string ToString() =>
-        $"{UsedBy} -> {Target} | Damage: {Damage} | Skill ID: {SkillId} | Flags: {Flags}";
+        $"{UsedBy} -> {Target} | Damage: {Damage} | Skill ID: {SkillId} | Skill Name: {SkillName} | Flags: {Flags}";
 
     /// <summary>
     /// 로그 형식으로 데이터를 변환합니다.

@@ -33,10 +33,8 @@ public sealed class Packet_10299 : Packet
     }
 
     /// <inheritdoc />
-    public override string ToString()
-    {
-        return $"{UsageBy} -> {Target} | Action: {Action} | Flags: {Flags}";
-    }
+    public override string ToString() =>
+        $"{UsageBy} -> {Target} | Action: {Action} | Flags: {Flags}";
 
     public static Packet_10299 Parse(ReadOnlySpan<byte> content)
     {
