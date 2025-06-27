@@ -76,7 +76,8 @@ public sealed class SkillActionPacket : Packet
         content = content[4..]; // 4바이트 건너뛰기
 
         // 대상 ID 추출 (4바이트, Little Endian)
-        string target = content[^4..].To_hex();
+        string target = content[..4].To_hex();
+        content = content[8..]; // 4 + 4바이트 패딩
 
         return new SkillActionPacket(usedBy, target, nextTarget, action, castTime, actionName);
     }

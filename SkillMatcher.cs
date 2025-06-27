@@ -39,11 +39,6 @@ public enum SkillType
     /// <summary> 캐스팅 스킬 (_Casting -> _End -> Instance Hit) </summary>
     Casting,
 
-    /// <summary>
-    /// 캐스팅이 끝난 후 지연된 데미지가 발생
-    /// </summary>
-    LazyCasting,
-
     /// <summary>캐스팅 스킬 (_Casting -> _Targeting -> _End -> _Hit -> 완료)</summary>
     TargetCasting,
 
@@ -68,6 +63,8 @@ public enum SkillType
 /// <param name="LastStateTime">마지막 상태 변경 시간</param>
 /// <param name="IsUsing">스킬이 사용 됬는지 여부</param>
 /// <param name="TargetingCount">타겟팅 횟수 (캐스팅 스킬용)</param>
+/// <param name="TargetHistory">타겟 히스토리 (타겟 변경 이력)</param>
+/// <param name="StateHistory">상태 히스토리 (상태 변경 이력)</param>
 public record ActiveSkillInfo(
     string UsedBy,
     string OriginalTarget,
@@ -79,9 +76,144 @@ public record ActiveSkillInfo(
     DateTime LastStateTime,
     bool IsUsing = false,
     int TargetingCount = 0,
-    List<string> TargetHistory = new(),
-    Dictionary<SkillState, DateTime> StateHistory = new()
-);
+    List<string>? TargetHistory = null,
+    Dictionary<SkillState, DateTime>? StateHistory = null
+)
+{
+    /// <summary>
+    /// 새로운 ActiveSkillInfo 인스턴스를 생성합니다 (기본 컬렉션 포함)
+    /// </summary>
+    public static ActiveSkillInfo Create(
+        string usedBy,
+        string originalTarget,
+        string currentTarget,
+        string skillName,
+        SkillState state,
+        SkillType type,
+        DateTime startTime,
+        DateTime lastStateTime,
+        bool isUsing = false,
+        int targetingCount = 0
+    ) =>
+        new(
+            usedBy,
+            originalTarget,
+            currentTarget,
+            skillName,
+            state,
+            type,
+            startTime,
+            lastStateTime,
+            isUsing,
+            targetingCount,
+            new List<string> { currentTarget }, // ✅ 현재 타겟으로 초기화
+            new Dictionary<SkillState, DateTime> { [state] = startTime } // ✅ 현재 상태로 초기화
+        );
+
+    /// <summary>타겟 히스토리 (null 안전 접근)</summary>
+    public List<string> GetTargetHistory() => TargetHistory ?? new List<string>();
+
+    /// <summary>상태 히스토리 (null 안전 접근)</summary>
+    public Dictionary<SkillState, DateTime> GetStateHistory() =>
+        StateHistory ?? new Dictionary<SkillState, DateTime>();
+
+    /// <summary>스킬 상태만 업데이트</summary>
+    public ActiveSkillInfo WithState(SkillState newState, DateTime stateTime)
+    {
+        var stateHistory = GetStateHistory();
+        stateHistory[newState] = stateTime;
+
+        return this with
+        {
+            State = newState,
+            LastStateTime = stateTime,
+            StateHistory = stateHistory,
+        };
+    }
+
+    /// <summary>타겟만 업데이트 (히스토리 포함)</summary>
+    public ActiveSkillInfo WithTarget(string newTarget, DateTime updateTime)
+    {
+        var targetHistory = GetTargetHistory();
+        if (CurrentTarget != newTarget && !targetHistory.Contains(newTarget))
+        {
+            targetHistory.Add(newTarget);
+        }
+
+        return this with
+        {
+            CurrentTarget = newTarget,
+            LastStateTime = updateTime,
+            TargetHistory = targetHistory,
+        };
+    }
+
+    /// <summary>타겟과 상태를 동시에 업데이트</summary>
+    public ActiveSkillInfo WithTargetAndState(
+        string newTarget,
+        SkillState newState,
+        DateTime updateTime
+    )
+    {
+        var targetHistory = GetTargetHistory();
+        var stateHistory = GetStateHistory();
+
+        if (CurrentTarget != newTarget && !targetHistory.Contains(newTarget))
+        {
+            targetHistory.Add(newTarget);
+        }
+
+        stateHistory[newState] = updateTime;
+
+        return this with
+        {
+            CurrentTarget = newTarget,
+            State = newState,
+            LastStateTime = updateTime,
+            TargetHistory = targetHistory,
+            StateHistory = stateHistory,
+        };
+    }
+
+    /// <summary>타겟팅 카운트만 업데이트</summary>
+    public ActiveSkillInfo WithTargetingCount(int count, DateTime updateTime)
+    {
+        return this with { TargetingCount = count, LastStateTime = updateTime };
+    }
+
+    /// <summary>스킬 타입만 업데이트 (Casting → Channeling 전환용)</summary>
+    public ActiveSkillInfo WithType(SkillType newType, DateTime updateTime)
+    {
+        return this with { Type = newType, LastStateTime = updateTime };
+    }
+
+    /// <summary>IsUsing 플래그만 업데이트</summary>
+    public ActiveSkillInfo WithUsing(bool isUsing, DateTime updateTime)
+    {
+        return this with { IsUsing = isUsing, LastStateTime = updateTime };
+    }
+
+    /// <summary>마지막 상태 시간만 업데이트 (채널링 스킬용)</summary>
+    public ActiveSkillInfo WithLastTime(DateTime lastTime)
+    {
+        return this with { LastStateTime = lastTime };
+    }
+
+    /// <summary>복합 업데이트 - 상태, IsUsing, 시간 동시 업데이트</summary>
+    public ActiveSkillInfo WithStateAndUsing(SkillState newState, bool isUsing, DateTime updateTime)
+    {
+        var stateHistory = GetStateHistory();
+        stateHistory[newState] = updateTime;
+
+        return this with
+        {
+            State = newState,
+            IsUsing = isUsing,
+            LastStateTime = updateTime,
+            StateHistory = stateHistory,
+        };
+    }
+}
 
 /// <summary>
 /// 스킬 매칭 결과를 나타내는 레코드
@@ -111,18 +243,6 @@ public sealed class SkillMatcher
 
     // 설정 상수
     private const double SKILL_TIMEOUT_SECONDS = 10.0;
-
-    /// <summary>
-    /// Target 값을 정규화합니다 (마지막 바이트를 00으로 변경)
-    /// </summary>
-    private string NormalizeTarget(string target)
-    {
-        if (string.IsNullOrEmpty(target) || target.Length < 8 || target == "ffffffff")
-            return target;
-
-        // 마지막 바이트를 00으로 변경하여 정규화
-        return target.Substring(0, 6) + "00";
-    }
 
     /// <summary>
     /// 두 Target 값이 매칭되는지 확인합니다 (유연한 매칭)
@@ -213,7 +333,7 @@ public sealed class SkillMatcher
     /// </summary>
     private ActiveSkillInfo? FindSkillForDamage(SkillDamagePacket damage, DateTime damageTime)
     {
-        var damageTarget = NormalizeTarget(damage.Target);
+        var damageTarget = damage.Target;
 
         // 1. 정확한 타겟 매칭 우선
         var exactMatch = _castingSkills
@@ -232,7 +352,7 @@ public sealed class SkillMatcher
         var historyMatch = _castingSkills
             .Values.Where(skill =>
                 skill.UsedBy == damage.UsedBy
-                && skill.TargetHistory.Any(target => IsTargetMatch(target, damageTarget))
+                && skill.TargetHistory!.Any(target => IsTargetMatch(target, damageTarget))
                 && CanProduceDamage(skill, damageTime)
             )
             .OrderBy(skill => Math.Abs((damageTime - skill.LastStateTime).TotalMilliseconds))
@@ -266,7 +386,7 @@ public sealed class SkillMatcher
             $"[SkillMatcher] Completed skill: {skill.SkillName} "
                 + $"Key: {skillKey} Duration: {duration.TotalSeconds:F3}s "
                 + $"TargetingCount: {skill.TargetingCount} "
-                + $"Targets: [{string.Join(" → ", skill.TargetHistory)}]"
+                + $"Targets: [{string.Join(" → ", skill.TargetHistory!)}]"
         );
 
         _castingSkills.TryRemove(skillKey, out _);
@@ -279,7 +399,7 @@ public sealed class SkillMatcher
 
         if (state == SkillState.Casting)
         {
-            var skillInfo = new ActiveSkillInfo(
+            var skillInfo = ActiveSkillInfo.Create(
                 skillAction.UsedBy,
                 skillAction.Target,
                 skillAction.Target,
@@ -287,9 +407,7 @@ public sealed class SkillMatcher
                 state,
                 type,
                 lastAt,
-                lastAt,
-                TargetHistory: new List<string> { skillAction.Target },
-                StateHistory: new Dictionary<SkillState, DateTime> { [state] = lastAt }
+                lastAt
             );
             _castingSkills[skillKey] = skillInfo;
             logger.Info($"[SkillMatcher] Started skill: {baseName} Key: {skillKey}");
@@ -306,7 +424,7 @@ public sealed class SkillMatcher
                 userSkills = new ConcurrentDictionary<DateTime, ActiveSkillInfo>();
                 _activeSkills[skillAction.UsedBy] = userSkills;
             }
-            var skillInfo = new ActiveSkillInfo(
+            var skillInfo = ActiveSkillInfo.Create(
                 skillAction.UsedBy,
                 skillAction.Target,
                 skillAction.Target,
@@ -314,9 +432,7 @@ public sealed class SkillMatcher
                 state,
                 type,
                 lastAt,
-                lastAt,
-                TargetHistory: new List<string> { skillAction.Target },
-                StateHistory: new Dictionary<SkillState, DateTime> { [state] = lastAt }
+                lastAt
             );
             userSkills[lastAt] = skillInfo;
             logger.Info(
@@ -361,6 +477,31 @@ public sealed class SkillMatcher
 
             // 정말 처리할 스킬이 없으면 무시
             logger.Debug($"[SkillMatcher] Ignoring redundant Idle signal from {skill.UsedBy}");
+            return;
+        }
+        if (state == SkillState.Instant)
+        {
+            if (!_activeSkills.TryGetValue(skill.UsedBy, out var userSkills))
+            {
+                userSkills = new ConcurrentDictionary<DateTime, ActiveSkillInfo>();
+                _activeSkills[skill.UsedBy] = userSkills;
+            }
+
+            var skillInfo = ActiveSkillInfo.Create(
+                skill.UsedBy,
+                skill.Target,
+                skill.Target,
+                baseSkillName,
+                state,
+                type,
+                lastAt,
+                lastAt
+            );
+
+            userSkills[lastAt] = skillInfo;
+            logger.Info(
+                $"[SkillMatcher] Started instant skill (Info): {baseSkillName} Key: {skill.UsedBy}_{lastAt.Ticks}"
+            );
             return;
         }
 
@@ -430,27 +571,18 @@ public sealed class SkillMatcher
                 }
                 break;
         }
+        var updatedSkill =
+            newTarget != existingSkill.CurrentTarget
+                ? existingSkill.WithTargetAndState(newTarget, newState, receivedAt)
+                : existingSkill.WithState(newState, receivedAt);
 
         // 타겟 변화 추적
-        var targetHistory = existingSkill.TargetHistory.ToList();
-        if (newTarget != existingSkill.CurrentTarget)
+        if (targetingCount != existingSkill.TargetingCount)
         {
-            targetHistory.Add(newTarget);
+            updatedSkill = updatedSkill.WithTargetingCount(targetingCount, receivedAt);
         }
 
-        // 상태 변화 추적
-        var stateHistory = existingSkill.StateHistory.ToDictionary(kv => kv.Key, kv => kv.Value);
-        stateHistory[newState] = receivedAt;
-
-        _castingSkills[skillKey] = existingSkill with
-        {
-            CurrentTarget = newTarget,
-            State = newState,
-            LastStateTime = receivedAt,
-            TargetingCount = targetingCount,
-            TargetHistory = targetHistory,
-            StateHistory = stateHistory,
-        };
+        _castingSkills[skillKey] = updatedSkill;
 
         logger.Info(
             $"[SkillMatcher] Updated skill {existingSkill.SkillName} "
@@ -494,7 +626,7 @@ public sealed class SkillMatcher
         if (damagePacket.IsDot())
             return damagePacket;
 
-        var damageTarget = NormalizeTarget(damagePacket.Target);
+        var damageTarget = damagePacket.Target;
         logger.Info(
             $"[SkillMatcher] Matching damage packet: from {damagePacket.UsedBy} to {damageTarget}"
         );
@@ -534,16 +666,6 @@ public sealed class SkillMatcher
 
             return damagePacket;
         }
-        var lazyCastingMatch = TryMatchLazyCastingSkill(damagePacket, lastAttackTime);
-        if (lazyCastingMatch.HasValue)
-        {
-            logger.Info(
-                $"[SkillMatcher] Lazy Casting skill matched: [{lazyCastingMatch.Value.Key}] {lazyCastingMatch.Value.Skill?.SkillName} for damage {damagePacket.Damage}"
-            );
-
-            damagePacket.SkillName = lazyCastingMatch.Value.Skill?.SkillName ?? "";
-            return damagePacket;
-        }
         logger.Info(
             $"[SkillMatcher] No skill match found for damage From {damagePacket.UsedBy} To {damagePacket.Target} Damage {damagePacket.Damage}"
         );
@@ -570,11 +692,11 @@ public sealed class SkillMatcher
         double? maxTimeDiffMs = null
     )
     {
-        var damageTarget = NormalizeTarget(damagePacket.Target);
+        var damageTarget = damagePacket.Target;
 
         var candidates = source
             .Where(kvp =>
-                IsTargetMatch(kvp.Value.Target, damageTarget)
+                IsTargetMatch(kvp.Value.CurrentTarget, damageTarget)
                 && kvp.Value.UsedBy == damagePacket.UsedBy
                 && filter(kvp.Value)
             )
@@ -612,7 +734,7 @@ public sealed class SkillMatcher
         {
             return null;
         }
-        var damageTarget = NormalizeTarget(damagePacket.Target);
+        var damageTarget = damagePacket.Target;
 
         logger.Debug(
             $"[SkillMatcher] Searching for casting skill candidates with UsedBy: {damagePacket.UsedBy}, Target: {damageTarget}"
@@ -630,12 +752,12 @@ public sealed class SkillMatcher
 
         if (channelingCandidate.Value != null)
         {
-            _castingSkills[channelingCandidate.Key] = channelingCandidate.Value with
-            {
-                Type = SkillType.Channeling,
-            };
+            _castingSkills[channelingCandidate.Key] = channelingCandidate.Value.WithType(
+                SkillType.Channeling,
+                lastAttackTime
+            );
             logger.Info(
-                $"[SkillMatcher] Casting skill changed to Channeling: {channelingCandidate.Value.SkillName} UsedBy: {channelingCandidate.Value.UsedBy} Target: {channelingCandidate.Value.Target}"
+                $"[SkillMatcher] Casting skill changed to Channeling: {channelingCandidate.Value.SkillName} UsedBy: {channelingCandidate.Value.UsedBy} Target: {channelingCandidate.Value.CurrentTarget}"
             );
             return null; // 채널링으로 전이되었으므로 null 반환
         }
@@ -645,7 +767,7 @@ public sealed class SkillMatcher
                 IsTargetMatch(kvp.Value.CurrentTarget, damageTarget)
                 && kvp.Value.UsedBy == damagePacket.UsedBy
                 && !kvp.Value.IsUsing
-                && kvp.Value.Type == SkillType.Casting
+                && kvp.Value.Type == SkillType.TargetCasting
                 && kvp.Value.State == SkillState.Ending
             )
             .OrderBy(kvp => Math.Abs((lastAttackTime - kvp.Value.LastStateTime).TotalMilliseconds))
@@ -653,41 +775,47 @@ public sealed class SkillMatcher
 
         if (targetingCandidate.Value != null)
         {
-            _castingSkills[targetingCandidate.Key] = targetingCandidate.Value with
-            {
-                IsUsing = true,
-                LastStateTime = lastAttackTime,
-            };
+            _castingSkills[targetingCandidate.Key] = targetingCandidate.Value.WithUsing(
+                true,
+                lastAttackTime
+            );
+            logger.Info(
+                $"[SkillMatcher] TargetCasting skill matched: {targetingCandidate.Value.SkillName} UsedBy: {targetingCandidate.Value.UsedBy} Target: {targetingCandidate.Value.CurrentTarget}"
+            );
             return new SkillMatchResult(targetingCandidate.Key, targetingCandidate.Value);
-        }
-        // 3. Lazy 캐스팅 연타 패턴: Casting + Ending 상태에서 매칭
-        var lazyCandidate = _castingSkills
+        } // 3. 일반 Casting 스킬 정리 로직 (PlasmaShroud 등)
+        // Casting → End 패턴에서 End 상태의 일반 Casting 스킬은 완료된 것으로 간주
+        var completedCastingSkills = _castingSkills
             .Where(kvp =>
-                IsTargetMatch(kvp.Value.Target, damageTarget)
-                && kvp.Value.UsedBy == damagePacket.UsedBy
-                && kvp.Value.Type == SkillType.Casting
+                kvp.Value.UsedBy == damagePacket.UsedBy
+                && kvp.Value.Type == SkillType.Casting // ← 일반 Casting 스킬만
                 && kvp.Value.State == SkillState.Ending
+                && !kvp.Value.IsUsing
             )
-            .OrderBy(kvp => Math.Abs((lastAttackTime - kvp.Value.LastStateTime).TotalMilliseconds))
-            .FirstOrDefault();
+            .ToList();
 
-        if (lazyCandidate.Value != null)
+        foreach (var completedSkill in completedCastingSkills)
         {
-            if (lazyCandidate.Value.IsUsing == false)
-            {
-                _castingSkills.TryRemove(lazyCandidate.Key, out _);
-                logger.Info(
-                    $"[SkillMatcher] Removing Lazy Casting Skill: {lazyCandidate.Value.SkillName} UsedBy: {lazyCandidate.Value.UsedBy} Target: {lazyCandidate.Value.Target}"
-                );
+            var timeDiff = Math.Abs(
+                (lastAttackTime - completedSkill.Value.LastStateTime).TotalMilliseconds
+            );
 
-                return null;
-            }
-            _castingSkills[lazyCandidate.Key] = lazyCandidate.Value with
+            // End 후 충분한 시간이 지났으면 완료된 것으로 간주하고 정리
+            if (timeDiff > 500) // 0.5초 후 정리 (Instant 스킬 등록 시간 고려)
             {
-                IsUsing = true,
-                LastStateTime = lastAttackTime,
-            };
-            return new SkillMatchResult(lazyCandidate.Key, lazyCandidate.Value);
+                _castingSkills.TryRemove(completedSkill.Key, out _);
+                logger.Info(
+                    $"[SkillMatcher] Cleaned up completed casting skill: {completedSkill.Value.SkillName} "
+                        + $"(End: {completedSkill.Value.LastStateTime:HH:mm:ss.fff}, Now: {lastAttackTime:HH:mm:ss.fff})"
+                );
+            }
+            else
+            {
+                logger.Debug(
+                    $"[SkillMatcher] Completed casting skill waiting for cleanup: {completedSkill.Value.SkillName} "
+                        + $"(TimeDiff: {timeDiff:F0}ms)"
+                );
+            }
         }
 
         return null;
@@ -711,40 +839,13 @@ public sealed class SkillMatcher
                 // 채널링 스킬이 진행 중인 경우 마지막 데미지 시간으로 상태 정보 업데이트
                 if (skill.State == SkillState.Casting || skill.State == SkillState.Ending)
                 {
-                    _castingSkills[key] = skill with { LastStateTime = lastAttackTime };
+                    _castingSkills[key] = skill.WithLastTime(lastAttackTime);
                 }
                 if (skill.State == SkillState.Idle)
                 {
                     // 채널링 스킬이 Idle 상태인 경우, 채널링이 끝난 것으로 간주하고 제거
                     _castingSkills.TryRemove(key, out _);
                 }
-            }
-        );
-    }
-
-    /// <summary>
-    /// 지연된 캐스팅 스킬 매칭 - 캐스팅이 완료된 지연된 스킬 매칭
-    /// </summary>
-    private SkillMatchResult? TryMatchLazyCastingSkill(
-        SkillDamagePacket damagePacket,
-        DateTime lastAttackTime
-    )
-    {
-        var damageTarget = NormalizeTarget(damagePacket.Target);
-        logger.Debug(
-            $"[SkillMatcher] Searching for casting skill candidates with UsedBy: {damagePacket.UsedBy}, Target: {damageTarget}"
-        );
-        return MatchSkillCore(
-            _castingSkills,
-            damagePacket,
-            lastAttackTime,
-            skill =>
-                !skill.IsUsing
-                && skill.Type == SkillType.Casting
-                && skill.State == SkillState.Ending,
-            (key, skill) =>
-            {
-                _castingSkills[key] = skill with { LastStateTime = lastAttackTime };
             }
         );
     }
@@ -771,7 +872,7 @@ public sealed class SkillMatcher
             (key, skill) =>
             {
                 // 즉시 스킬은 매칭 후 제거
-                if (skill.Target != "ffffffff")
+                if (skill.CurrentTarget != "ffffffff")
                 {
                     userSeqTable.TryRemove(key, out _);
                 }
@@ -805,7 +906,7 @@ public sealed class SkillMatcher
         {
             _castingSkills.TryRemove(expiredKey, out var castingSkill);
             logger.Info(
-                $"[SkillMatcher] Removed {castingSkill.SkillName} UsagedBy: {castingSkill.UsedBy} Target: {castingSkill.Target}"
+                $"[SkillMatcher] Removed {castingSkill!.SkillName} UsagedBy: {castingSkill.UsedBy} Target: {castingSkill.CurrentTarget}"
             );
         }
     }

@@ -192,6 +192,26 @@ public sealed class PacketCaptureManager : IDisposable
 
                     try
                     {
+                        if (SkillActionPacket.TYPE.Contains(dataType))
+                        {
+                            var skillAction = SkillActionPacket.Parse(payload);
+                            if (skillAction.UsedBy == skillAction.Target)
+                            {
+                                // 버프 스킬 스킵
+                                logger.Debug(
+                                    $"Skipping self-targeted skill: {skillAction.SkillName} (UsedBy: {skillAction.UsedBy})"
+                                );
+                                continue;
+                            }
+                            _skillMatcher.EnqueueSkillAction(skillAction, _lastAt);
+                        }
+                        else if (
+                            SkillInfoPacket.TYPE.Contains(dataType)
+                            || SkillDamagePacket.TYPE.Contains(dataType)
+                        )
+                        {
+                            // 스킬 정보 또는 데미지 패킷 처리
+                        }
                         if (SkillInfoPacket.TYPE.Contains(dataType))
                         {
                             var skillInfo = SkillInfoPacket.Parse(payload);
@@ -203,7 +223,7 @@ public sealed class PacketCaptureManager : IDisposable
                                 );
                                 continue;
                             }
-                            _skillMatcher.EnqueueSkill(skillInfo, _lastAt);
+                            _skillMatcher.EnqueueSkillInfo(skillInfo, _lastAt);
                         }
                         else if (SkillDamagePacket.TYPE.Contains(dataType))
                         {
