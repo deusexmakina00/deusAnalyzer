@@ -12,6 +12,7 @@ namespace PacketCapture;
 public sealed class StaticWebServer
 {
     private static readonly Logger logger = LogManager.GetCurrentClassLogger();
+    private readonly string host;
     private readonly int port;
     private readonly string webRootPath;
     private readonly FrozenDictionary<string, string> mimeTypes;
@@ -21,14 +22,16 @@ public sealed class StaticWebServer
     /// <summary>
     /// StaticWebServer 인스턴스를 초기화합니다.
     /// </summary>
+    /// <param name="host">서버가 연결가능한 host</param>
     /// <param name="port">서버가 수신할 포트 번호</param>
     /// <param name="webRootPath">웹 루트 경로 (null인 경우 자동 설정)</param>
     /// <exception cref="ArgumentOutOfRangeException">포트가 유효하지 않은 경우</exception>
-    public StaticWebServer(int port = 3000, string? webRootPath = null)
+    public StaticWebServer(string? host = "localhost", int port = 3000, string? webRootPath = null)
     {
         if (port is <= 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(port), "포트는 1-65535 범위여야 합니다.");
 
+        this.host = host;
         this.port = port;
         this.webRootPath = webRootPath ?? GetDefaultWebRootPath();
         this.mimeTypes = CreateMimeTypeDictionary();
@@ -98,11 +101,11 @@ public sealed class StaticWebServer
             EnsureWebRootExists();
 
             httpListener = new HttpListener();
-            httpListener.Prefixes.Add($"http://*:{port}/");
+            httpListener.Prefixes.Add($"http://{host}:{port}/");
             httpListener.Start();
             isRunning = true;
 
-            logger.Info("Static web server started on http://*:{Port}/", port);
+            logger.Info("Static web server started on http://{Host}:{Port}/", host, port);
             logger.Info("Serving files from: {WebRootPath}", webRootPath);
             logger.Debug(
                 "AppDomain.CurrentDomain.BaseDirectory: {BaseDirectory}",

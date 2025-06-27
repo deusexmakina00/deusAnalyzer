@@ -64,11 +64,11 @@ class Program
         try
         {
             // 정적 웹 서버 시작
-            webServer = new StaticWebServer(8080);
+            webServer = new StaticWebServer("*", 8080);
             var webServerTask = webServer.StartAsync();
 
             // 최신 WebSocket 서버 시작
-            webSocketServer = new ModernWebSocketServer(9001);
+            webSocketServer = new ModernWebSocketServer("*", 9001);
             var webSocketTask = webSocketServer.StartAsync();
 
             // 패킷 캡처 매니저 시작

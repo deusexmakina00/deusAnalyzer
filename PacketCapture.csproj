@@ -14,6 +14,9 @@
     <PackageReference Include="NLog" Version="5.3.4" />
     <PackageReference Include="System.Net.WebSockets" Version="4.3.0" />
     <PackageReference Include="PacketDotNet" Version="1.4.7" />
+    <PackageReference Include="MoonSharp" Version="2.0.0" />
     <PackageReference Include="SharpPcap" Version="6.2.5" />
+    <!-- ✅ 명령줄 파라미터 처리를 위한 패키지 추가 -->
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
   </ItemGroup>
 </Project>

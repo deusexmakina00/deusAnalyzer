@@ -27,6 +27,37 @@ public sealed class PacketCaptureManager : IDisposable
     private NpcapPacketCapture? _npcapCapture;
     private ModernWebSocketServer? _webSocketServer;
     private bool _disposed;
+    private readonly bool _savePackets;
+    private readonly string _saveDirectory;
+    private long _savedPacketCount = 0;
+
+    public PacketCaptureManager(bool savePackets = false, string saveDirectory = @"C:\Packets")
+    {
+        _savePackets = savePackets;
+        _saveDirectory = saveDirectory;
+
+        // 패킷 저장이 활성화된 경우 디렉토리 생성
+        if (_savePackets)
+        {
+            try
+            {
+                Directory.CreateDirectory(_saveDirectory);
+                logger.Info($"[PacketSave] Packet saving enabled. Directory: {_saveDirectory}");
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, $"[PacketSave] Failed to create save directory: {_saveDirectory}");
+                throw new InvalidOperationException(
+                    $"Cannot create packet save directory: {_saveDirectory}",
+                    ex
+                );
+            }
+        }
+        else
+        {
+            logger.Info("[PacketSave] Packet saving disabled");
+        }
+    }
 
     private async void OnDamageMatched(SkillDamagePacket damage)
     {
@@ -170,7 +201,15 @@ public sealed class PacketCaptureManager : IDisposable
             try
             {
                 var allPackets = PacketExtractor.ExtractPackets(data);
-
+                if (_savePackets && allPackets.Count > 0)
+                {
+                    PacketExtractor.SavePacketsToFiles(
+                        allPackets,
+                        _saveDirectory,
+                        _lastAt,
+                        _lastRelSeq
+                    );
+                }
                 //PacketExtractor.SavePacketsToFiles(allPackets, "C:\\Packets", _lastAt, _lastRelSeq);
                 int maxProcessedEnd = 0;
                 int processedCount = 0;

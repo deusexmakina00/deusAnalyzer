@@ -13,6 +13,7 @@ namespace PacketCapture;
 public sealed class ModernWebSocketServer
 {
     private static readonly Logger logger = LogManager.GetCurrentClassLogger();
+    private readonly string host;
     private readonly int port;
     private readonly ConcurrentDictionary<string, WebSocket> clients = [];
     private HttpListener? httpListener;
@@ -22,13 +23,15 @@ public sealed class ModernWebSocketServer
     /// <summary>
     /// ModernWebSocketServer 인스턴스를 초기화합니다.
     /// </summary>
+    /// <param name="host">서버가 수신할 호스트</param>
     /// <param name="port">서버가 수신할 포트 번호</param>
     /// <exception cref="ArgumentOutOfRangeException">포트가 유효하지 않은 경우</exception>
-    public ModernWebSocketServer(int port)
+    public ModernWebSocketServer(string? host = null, int port = 9001)
     {
         if (port is <= 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(port), "포트는 1-65535 범위여야 합니다.");
 
+        this.host = host ?? "localhost";
         this.port = port;
     }
 
@@ -52,14 +55,15 @@ public sealed class ModernWebSocketServer
         {
             cancellationTokenSource = new CancellationTokenSource();
             httpListener = new HttpListener();
-            httpListener.Prefixes.Add($"http://*:{port}/");
+            httpListener.Prefixes.Add($"http://{host}:{port}/");
 
             httpListener.Start();
             isRunning = true;
 
             logger.Info(
-                "WebSocket server started on port {Port} (listening on all interfaces)",
-                port
+                "WebSocket server started on port {Port} (listening on {Host})",
+                port,
+                host
             );
 
             await ProcessIncomingConnections().ConfigureAwait(false);
