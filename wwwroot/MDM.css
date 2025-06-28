@@ -3,17 +3,72 @@ body {
     background-color: #1a1a1a;
     color: #ffffff;
     margin: 0;
-    padding: 20px;
+    padding: 0;
     user-select: none;
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.app-layout {
+    display: flex;
+    height: 100vh;
+}
+
+.dual-sidebar {
+    display: flex;
+    flex-shrink: 0;
+    border-right: 2px solid #34495e;
+}
+
+.history-sidebar {
+    width: 300px;
+    background-color: #2c2c2c;
+    border-right: 1px solid #34495e;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.target-sidebar {
+    width: 250px;
+    background-color: #2c2c2c;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Sidebar Header Styles */
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 2px solid #34495e;
+    flex-shrink: 0;
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    color: #3498db;
+    font-size: 1.2em;
+}
+
+.main-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background-color: #1a1a1a;
 }
 
 .container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 0 20px;
+    max-width: none;
+    margin: 0;
+    padding: 0;
 }
 
 .header {
@@ -38,11 +93,42 @@ body {
     font-size: 1.1em;
 }
 
+.battle-controls {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+}
+
+.end-battle-btn {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1em;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.end-battle-btn:hover {
+    background: linear-gradient(135deg, #c0392b, #a93226);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.end-battle-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
 .player-rankings {
     background-color: #2c2c2c;
     border-radius: 10px;
     padding: 20px 30px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    margin-top: 20px;
 }
 
 .ranking-header {
@@ -157,10 +243,11 @@ body {
     font-size: 0.95em;
     text-align: right;
     padding: 0 5px;
+    color: #ffffff;
 }
 
 .damage-value {
-    color: #ffffff;
+    color: #ffffff !important;
 }
 
 .dps-value {
@@ -295,6 +382,8 @@ body {
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
     z-index: 2;
     color: #ffffff;
+    white-space: nowrap;
+    max-width: calc(100% - 200px);
 }
 
 .skill-item-stats {
@@ -310,4 +399,288 @@ body {
     background: rgba(0, 0, 0, 0.3);
     padding: 2px 6px;
     border-radius: 3px;
+}
+
+
+.clear-filter-btn,
+.clear-history-btn {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.8em;
+    transition: all 0.3s ease;
+}
+
+.clear-filter-btn:hover,
+.clear-history-btn:hover {
+    background: linear-gradient(135deg, #c0392b, #a93226);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.target-list,
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    overflow: visible;
+    padding: 15px;
+    padding-right: 10px;
+    min-height: 0;
+}
+
+.target-list.scrollable,
+.history-list {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.target-item {
+    background-color: #3a3a3a;
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    border-left: 4px solid #555;
+}
+
+.target-item:hover {
+    background-color: #4a4a4a;
+    border-left-color: #3498db;
+    transform: translateX(3px);
+}
+
+.target-item.selected {
+    border-color: #3498db;
+    border-left-color: #3498db;
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    transform: translateX(5px);
+}
+
+.target-name {
+    font-weight: bold;
+    font-size: 0.9em;
+    margin-bottom: 4px;
+    word-wrap: break-word;
+    line-height: 1.2;
+}
+
+.target-damage {
+    font-size: 0.8em;
+    color: #f39c12;
+    font-weight: bold;
+}
+
+.target-item.selected .target-damage {
+    color: #ffffff;
+}
+
+.no-targets,
+.no-history {
+    text-align: center;
+    color: #7f8c8d;
+    font-size: 0.9em;
+    padding: 40px 20px;
+    font-style: italic;
+}
+
+.filter-info {
+    background-color: #3498db;
+    color: white;
+    padding: 8px 15px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* Scrollbar styling for sidebar */
+.sidebar::-webkit-scrollbar,
+.target-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.target-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.target-list::-webkit-scrollbar-thumb {
+    background: #3498db;
+    border-radius: 3px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover,
+.target-list::-webkit-scrollbar-thumb:hover {
+    background: #2980b9;
+}
+
+/* Battle History Styles */
+.history-item {
+    background-color: #3a3a3a;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-left: 4px solid #555;
+}
+
+.history-item:hover {
+    background-color: #4a4a4a;
+    border-left-color: #3498db;
+    transform: translateX(5px);
+}
+
+.history-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.history-time {
+    font-weight: bold;
+    color: #ecf0f1;
+    font-size: 0.9em;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.history-duration {
+    background-color: #34495e;
+    color: #ecf0f1;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.history-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.history-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat-label {
+    color: #bdc3c7;
+    font-size: 0.8em;
+}
+
+.stat-value {
+    color: #f39c12;
+    font-weight: bold;
+    font-size: 0.8em;
+}
+
+.history-top-player {
+    background-color: rgba(241, 196, 15, 0.2);
+    border: 1px solid #f1c40f;
+    border-radius: 4px;
+    padding: 8px;
+    color: #f1c40f;
+    font-size: 0.8em;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* Additional scrollbar styles for history list */
+.history-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.history-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+    background: #3498db;
+    border-radius: 3px;
+}
+
+.history-list::-webkit-scrollbar-thumb:hover {
+    background: #2980b9;
+}
+
+/* Historical View Indicator Styles */
+.historical-indicator {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+    box-shadow: 0 4px 12px rgba(155, 89, 182, 0.3);
+    display: none;
+}
+
+.historical-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+}
+
+.back-to-live-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.back-to-live-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+/* Current Battle Item Styles */
+.current-battle {
+    border-left-color: #e74c3c !important;
+    background: linear-gradient(135deg, rgba(231, 76, 60, 0.1), rgba(192, 57, 43, 0.1));
+    border: 2px solid rgba(231, 76, 60, 0.3);
+}
+
+.current-battle:hover {
+    border-color: #e74c3c !important;
+    background: linear-gradient(135deg, rgba(231, 76, 60, 0.2), rgba(192, 57, 43, 0.2));
+    transform: translateX(5px);
+}
+
+.current-battle-indicator {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-align: center;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
 }

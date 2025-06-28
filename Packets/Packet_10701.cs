@@ -113,6 +113,19 @@ public sealed partial class SkillDamagePacket : Packet
     /// <returns>DOT 여부</returns>
     public bool IsDot() => string.IsNullOrEmpty(SkillName) && Flags.Dot;
 
+    public DamageModel ToModel()
+    {
+        return new DamageModel
+        {
+            UsedBy = UsedBy,
+            Target = Target,
+            Damage = (int)Damage,
+            SkillName = SkillName,
+            Flags = Flags,
+            FlagBytes = FlagBytes,
+        };
+    }
+
     /// <summary>
     /// ReadOnlySpan을 사용한 고성능 데미지 패킷 파싱
     /// </summary>

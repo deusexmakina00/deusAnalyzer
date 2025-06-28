@@ -29,6 +29,11 @@ local activeSkills = {}               -- string -> table[datetime -> ActiveSkill
 local installationsByOwner = {}       -- string -> InstallationInfo[]
 local installationsByTarget = {}      -- string -> InstallationInfo[]
 local pendingDamages = {}             -- queue
+local pendingHpChanges = {}           -- queue for HP change packets
+local pendingSkillStates = {}         -- queue for SkillState packets (10299)
+local pendingChangeHp = {}            -- queue for ChangeHP packets (100178)
+local pendingSkillStates = {}          -- queue for SkillState packets
+local pendingChangeHp = {}            -- queue for ChangeHp packets
 
 -- ActiveSkillInfo 생성 함수
 local function createActiveSkillInfo(usedBy, originalTarget, currentTarget, nextTarget, 
@@ -416,7 +421,6 @@ local function tryMatchCastingSkill(damagePacket, lastAttackTime)
                     instantCandidate = {key = key, skill = skill}
                 end
             end
-        end
     end
     
     if instantCandidate then
@@ -870,6 +874,36 @@ function MatchDamageToSkill(damagePacket, lastAttackTime)
     return damagePacket
 end
 
+-- HP 변화 타입 판단
+local function determineHpChangeType(hpChange)
+    if hpChange < 0 then
+        return HP_CHANGE_TYPE.Damage
+    elseif hpChange > 0 then
+        return HP_CHANGE_TYPE.Heal
+    else
+        return HP_CHANGE_TYPE.Unknown
+    end
+end
+
+-- HP 변화 패킷이 힐링 스킬인지 판단
+local function isHealingSkill(skillName)
+    if not skillName then return false end
+    
+    local healingKeywords = {
+        "heal", "cure", "recovery", "restore", "regeneration", "blessing",
+        "힐", "치유", "회복", "재생", "축복", "치료"
+    }
+    
+    local lowerSkillName = string.lower(skillName)
+    for _, keyword in pairs(healingKeywords) do
+        if string.find(lowerSkillName, keyword) then
+            return true
+        end
+    end
+    
+    return false
+end
+
 -- 오래된 스킬 정리
 function CleanupOldSkills(lastAt)
     -- 활성 스킬 정리
@@ -922,4 +956,244 @@ function CleanupOldSkills(lastAt)
         end
         installationsByTarget[target] = validInstallations
     end
+    
+end
+
+-- HP 변화 스킬 매칭 시도
+local function tryMatchHpChangeSkill(hpChangePacket, lastTime)
+    local changeAmount = hpChangePacket.HpChange
+    local changeType = determineHpChangeType(changeAmount)
+    local target = hpChangePacket.Target
+    local caster = hpChangePacket.UsedBy or hpChangePacket.Caster
+    
+    Log('DEBUG', string.format('[Lua] Matching HP change: Amount: %d Type: %s Caster: %s Target: %s', 
+        changeAmount, changeType, caster or "Unknown", target))
+    
+    -- 1. 캐스팅 스킬에서 힐링/데미지 매칭
+    local bestMatch = nil
+    local bestDiff = math.huge
+    
+    for key, skill in pairs(castingSkills) do
+        if skill.UsedBy == caster and not skill.IsUsing then
+            -- 힐링 스킬과 HP 증가 매칭
+            if changeType == HP_CHANGE_TYPE.Heal and isHealingSkill(skill.SkillName) then
+                if isTargetMatch(skill.CurrentTarget, skill.NextTarget, target) then
+                    local timeDiff = getTimeDiffMs(lastTime, skill.LastStateTime)
+                    if timeDiff <= 3000 and timeDiff < bestDiff then
+                        bestDiff = timeDiff
+                        bestMatch = {key = key, skill = skill, matchType = "Healing"}
+                    end
+                end
+            end
+            -- 데미지 스킬과 HP 감소 매칭 (기존 데미지 매칭과 유사)
+            elseif changeType == HP_CHANGE_TYPE.Damage and not isHealingSkill(skill.SkillName) then
+                if isTargetMatch(skill.CurrentTarget, skill.NextTarget, target) then
+                    local timeDiff = getTimeDiffMs(lastTime, skill.LastStateTime)
+                    if timeDiff <= 2000 and timeDiff < bestDiff then
+                        bestDiff = timeDiff
+                        bestMatch = {key = key, skill = skill, matchType = "Damage"}
+                    end
+                end
+            end
+        end
+    end
+    
+    if bestMatch then
+        local skill = bestMatch.skill
+        local key = bestMatch.key
+        
+        skill.IsUsing = true
+        skill.LastStateTime = lastTime
+        castingSkills[key] = skill
+        
+        Log('INFO', string.format('[Lua] HP change skill matched: %s (%s) Caster: %s Target: %s Amount: %d TimeDiff: %.0fms',
+            skill.SkillName, bestMatch.matchType, skill.UsedBy, target, changeAmount, bestDiff))
+        
+        return {Key = key, Skill = skill, ChangeType = changeType}
+    end
+    
+    -- 2. 즉시 스킬에서 매칭 시도
+    if caster and activeSkills[caster] then
+        for key, skill in pairs(activeSkills[caster]) do
+            local isHealMatch = changeType == HP_CHANGE_TYPE.Heal and isHealingSkill(skill.SkillName)
+            local isDamageMatch = changeType == HP_CHANGE_TYPE.Damage and not isHealingSkill(skill.SkillName)
+            
+            if (isHealMatch or isDamageMatch) and isTargetMatchSimple(skill.CurrentTarget, target) then
+                local timeDiff = getTimeDiffMs(lastTime, skill.LastStateTime)
+                
+                if timeDiff <= 2000 then
+                    -- 즉시 스킬은 사용 후 제거
+                    activeSkills[caster][key] = nil
+                    
+                    Log('INFO', string.format('[Lua] Instant HP change skill matched: %s Caster: %s Target: %s Amount: %d',
+                        skill.SkillName, skill.UsedBy, target, changeAmount))
+                    
+                    return {Key = tostring(key), Skill = skill, ChangeType = changeType}
+                end
+            end
+        end
+    end
+    
+    -- 3. 설치물에서 힐링/데미지 매칭 시도
+    local installationMatch = nil
+    
+    -- Owner별 설치물 검색
+    if caster and installationsByOwner[caster] then
+        for _, inst in pairs(installationsByOwner[caster]) do
+            if inst.Target == target then
+                local timeDiff = getTimeDiffMs(lastTime, inst.RegisteredAt)
+                if timeDiff <= INSTALLATION_TIMEOUT_SECONDS * 1000 then
+                    local isHealMatch = changeType == HP_CHANGE_TYPE.Heal and isHealingSkill(inst.SkillName)
+                    local isDamageMatch = changeType == HP_CHANGE_TYPE.Damage and not isHealingSkill(inst.SkillName)
+                    
+                    if isHealMatch or isDamageMatch then
+                        installationMatch = inst
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    if installationMatch then
+        Log('INFO', string.format('[Lua] Installation HP change matched: %s Owner: %s Target: %s Amount: %d',
+            installationMatch.SkillName, installationMatch.Owner, installationMatch.Target, changeAmount))
+        
+        -- 가상의 ActiveSkillInfo 생성 (설치물용)
+        local skillInfo = createActiveSkillInfo(
+            installationMatch.Owner,
+            installationMatch.Target,
+            installationMatch.Target,
+            "00000000",
+            installationMatch.SkillName,
+            SkillState.Instant,
+            SkillType.Installation,
+            installationMatch.RegisteredAt,
+            lastTime
+        )
+        
+        local skillKey = installationMatch.SkillName .. "_" .. installationMatch.InstallationId
+        return {Key = skillKey, Skill = skillInfo, ChangeType = changeType}
+    end
+    
+    return nil
+end
+
+-- HP 변화 패킷 처리
+function EnqueueHpChange(hpChangePacket, lastTime)
+    table.insert(pendingHpChanges, {hpChange = hpChangePacket, time = lastTime})
+    
+    -- 즉시 처리
+    local matched = MatchHpChangeToSkill(hpChangePacket, lastTime)
+    if matched and matched.SkillName and matched.SkillName ~= "" then
+        -- OnHpChangeMatchedCallback 호출 (있다면)
+        if OnHpChangeMatchedCallback then
+            OnHpChangeMatchedCallback(matched)
+        elseif OnDamageMatchedCallback then
+            -- HP 변화를 데미지 형태로 변환하여 기존 콜백 사용
+            local convertedPacket = {
+                UsedBy = matched.UsedBy or hpChangePacket.UsedBy or hpChangePacket.Caster,
+                Target = matched.Target or hpChangePacket.Target,
+                Damage = math.abs(hpChangePacket.HpChange or 0),
+                SkillName = matched.SkillName,
+                IsHeal = matched.ChangeType == HP_CHANGE_TYPE.Heal
+            }
+            OnDamageMatchedCallback(convertedPacket)
+        end
+    end
+end
+
+-- HP 변화를 스킬에 매칭
+function MatchHpChangeToSkill(hpChangePacket, lastTime)
+    local changeAmount = hpChangePacket.HpChange or 0
+    local changeType = determineHpChangeType(changeAmount)
+    local target = hpChangePacket.Target
+    local caster = hpChangePacket.UsedBy or hpChangePacket.Caster
+    
+    Log('INFO', string.format('[Lua] Matching HP change packet: Amount: %d Type: %s From: %s To: %s', 
+        changeAmount, changeType == HP_CHANGE_TYPE.Heal and "Heal" or 
+                      changeType == HP_CHANGE_TYPE.Damage and "Damage" or "Unknown", 
+        caster or "Unknown", target))
+    
+    -- HP 변화가 0이면 무시
+    if changeAmount == 0 then
+        Log('DEBUG', '[Lua] Ignoring zero HP change')
+        return hpChangePacket
+    end
+    
+    -- HP 변화 스킬 매칭 시도
+    local hpChangeMatch = tryMatchHpChangeSkill(hpChangePacket, lastTime)
+    if hpChangeMatch then
+        Log('INFO', string.format('[Lua] HP change skill matched: [%s] %s for change %d (%s)', 
+            hpChangeMatch.Key, hpChangeMatch.Skill.SkillName, changeAmount,
+            hpChangeMatch.ChangeType == HP_CHANGE_TYPE.Heal and "Heal" or "Damage"))
+        
+        -- 결과 패킷에 스킬명 설정
+        hpChangePacket.SkillName = hpChangeMatch.Skill.SkillName
+        hpChangePacket.UsedBy = hpChangeMatch.Skill.UsedBy
+        return hpChangePacket
+    end
+    
+    Log('INFO', string.format('[Lua] No skill match found for HP change Amount: %d From: %s To: %s', 
+        changeAmount, caster or "Unknown", target))
+    return hpChangePacket
+end
+
+-- SkillStatePacket(10299) 처리
+function EnqueueSkillState(skillStatePacket, lastAt)
+    Log('INFO', string.format('[Lua] Received SkillState packet: UsedBy: %s Target: %s Action: %s', 
+        skillStatePacket.UsageBy or "Unknown", skillStatePacket.Target or "Unknown", 
+        skillStatePacket.Action or "Unknown"))
+    
+    -- SkillState 패킷을 pendingSkillStates에 저장
+    if not pendingSkillStates then
+        pendingSkillStates = {}
+    end
+    
+    table.insert(pendingSkillStates, {
+        packet = skillStatePacket,
+        time = lastAt
+    })
+    
+    -- 필요시 즉시 처리 로직 추가 가능
+    -- 현재는 저장만 하고 나중에 HP 변화와 조합하여 처리
+end
+
+-- ChangeHpPacket(100178) 처리  
+function EnqueueChangeHp(changeHpPacket, lastAt)
+    local hpChange = (changeHpPacket.CurrentHp or 0) - (changeHpPacket.PrevHp or 0)
+    
+    Log('INFO', string.format('[Lua] Received ChangeHP packet: Target: %s PrevHP: %d CurrentHP: %d Change: %d', 
+        changeHpPacket.Target or "Unknown", changeHpPacket.PrevHp or 0, 
+        changeHpPacket.CurrentHp or 0, hpChange))
+    
+    -- HP 변화가 0이면 무시
+    if hpChange == 0 then
+        Log('DEBUG', '[Lua] Ignoring zero HP change')
+        return
+    end
+    
+    -- pendingChangeHp에 저장
+    if not pendingChangeHp then
+        pendingChangeHp = {}
+    end
+    
+    table.insert(pendingChangeHp, {
+        target = changeHpPacket.Target,
+        hpChange = hpChange,
+        prevHp = changeHpPacket.PrevHp or 0,
+        currentHp = changeHpPacket.CurrentHp or 0,
+        time = lastAt
+    })
+    
+    -- 기존 HP 변화 처리 함수와 연동
+    local hpChangeData = {
+        Target = changeHpPacket.Target,
+        HpChange = hpChange,
+        PrevHp = changeHpPacket.PrevHp or 0,
+        CurrentHp = changeHpPacket.CurrentHp or 0
+    }
+    
+    -- 기존 EnqueueHpChange 함수 호출
+    EnqueueHpChange(hpChangeData, lastAt)
 end

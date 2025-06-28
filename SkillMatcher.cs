@@ -32,8 +32,12 @@ public sealed class SkillMatcher
     {
         // 패킷 타입들 등록
         UserData.RegisterType<SkillDamagePacket>();
+        UserData.RegisterType<SkillStatePacket>();
+        UserData.RegisterType<ChangeHpPacket>();
         UserData.RegisterType<SkillActionPacket>();
         UserData.RegisterType<SkillInfoPacket>();
+        UserData.RegisterType<FlagBits>();
+        UserData.RegisterType<DamageModel>();
 
         // 로깅 함수 등록
         _luaScript.Globals["Log"] = (Action<string, string>)LogFromLua;
@@ -43,8 +47,9 @@ public sealed class SkillMatcher
             (Func<double>)(() => DateTime.UtcNow.Ticks / 10000000.0);
 
         // 이벤트 콜백 등록
-        _luaScript.Globals["OnDamageMatchedCallback"] =
+        _luaScript.Globals["OnDamageMatchedCallback_Packet"] =
             (Action<SkillDamagePacket>)OnDamageMatchedFromLua;
+        _luaScript.Globals["OnDamageMatchedCallback"] = (Action<DamageModel>)OnDamageMatchedFromLua;
     }
 
     private void LoadScript()
@@ -151,6 +156,46 @@ public sealed class SkillMatcher
     }
 
     /// <summary>
+    /// Lua에서 HP 정보 처리
+    /// </summary>
+    public void EnqueueHpChange(ChangeHpPacket hpInfo, DateTime lastAt)
+    {
+        try
+        {
+            _luaScript.Call(
+                _luaScript.Globals["EnqueueHpChange"],
+                hpInfo,
+                lastAt.Ticks / 10000000.0
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "[LuaEngine] Error in EnqueueHpChange");
+        }
+    }
+
+    /// <summary>
+    /// Lua에서 스킬 상태 처리
+    /// </summary>
+    /// <param name="skillState"></param>
+    /// <param name="lastAt"></param>
+    public void EnqueueSkillState(SkillStatePacket skillState, DateTime lastAt)
+    {
+        try
+        {
+            _luaScript.Call(
+                _luaScript.Globals["EnqueueSkillState"],
+                skillState,
+                lastAt.Ticks / 10000000.0
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "[LuaEngine] Error in EnqueueSkillState");
+        }
+    }
+
+    /// <summary>
     /// Lua에서 스킬 정보 처리
     /// </summary>
     public void EnqueueSkillInfo(SkillInfoPacket skillInfo, DateTime lastAt)
@@ -202,14 +247,19 @@ public sealed class SkillMatcher
     /// <summary>
     /// 데미지 매칭 이벤트 핸들러
     /// </summary>
-    public event Action<SkillDamagePacket>? OnDamageMatched;
+    public event Action<DamageModel>? OnDamageMatched;
 
     /// <summary>
     /// Lua에서 데미지 매칭 완료 시 호출
     /// </summary>
     private void OnDamageMatchedFromLua(SkillDamagePacket damage)
     {
-        OnDamageMatched?.Invoke(damage);
+        OnDamageMatchedFromLua(damage.ToModel());
+    }
+
+    private void OnDamageMatchedFromLua(DamageModel model)
+    {
+        OnDamageMatched?.Invoke(model);
     }
 
     public void Dispose()

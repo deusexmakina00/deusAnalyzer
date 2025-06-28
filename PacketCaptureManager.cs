@@ -59,7 +59,7 @@ public sealed class PacketCaptureManager : IDisposable
         }
     }
 
-    private async void OnDamageMatched(SkillDamagePacket damage)
+    private async void OnDamageMatched(DamageModel damage)
     {
         if (_webSocketServer is not null)
         {
@@ -235,7 +235,25 @@ public sealed class PacketCaptureManager : IDisposable
 
                     try
                     {
-                        if (SkillActionPacket.TYPE.Contains(dataType))
+                        if (ChangeHpPacket.TYPE.Contains(dataType))
+                        {
+                            var changeHp = ChangeHpPacket.Parse(payload);
+                            _skillMatcher.EnqueueHpChange(changeHp, _lastAt);
+                        }
+                        else if (SkillStatePacket.TYPE.Contains(dataType))
+                        {
+                            var skillState = SkillStatePacket.Parse(payload);
+                            if (skillState.UsedBy == skillState.Target)
+                            {
+                                // 버프 스킬 스킵
+                                logger.Debug(
+                                    $"Skipping self-targeted skill: {skillState.Action} (UsedBy: {skillState.UsedBy})"
+                                );
+                                continue;
+                            }
+                            _skillMatcher.EnqueueSkillState(skillState, _lastAt);
+                        }
+                        else if (SkillActionPacket.TYPE.Contains(dataType))
                         {
                             var skillAction = SkillActionPacket.Parse(payload);
                             if (skillAction.UsedBy == skillAction.Target)

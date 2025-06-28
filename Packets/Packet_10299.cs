@@ -1,11 +1,11 @@
 using PacketCapture;
 
-public sealed class Packet_10299 : Packet
+public sealed class SkillStatePacket : Packet
 {
     /// <summary>지원되는 패킷 타입</summary>
     public static readonly int[] TYPE = [10299];
 
-    public string UsageBy { get; init; } = string.Empty;
+    public string UsedBy { get; init; } = string.Empty;
     public string Target { get; init; } = string.Empty;
 
     public string Action { get; init; } = string.Empty;
@@ -17,7 +17,7 @@ public sealed class Packet_10299 : Packet
     /// 패킷을 생성합니다.
     /// </summary>
     /// <param name="data">패킷 데이터</param>
-    public Packet_10299(
+    public SkillStatePacket(
         string usageBy,
         string target,
         string action,
@@ -25,7 +25,7 @@ public sealed class Packet_10299 : Packet
         FlagBits flags
     )
     {
-        UsageBy = usageBy;
+        UsedBy = usageBy;
         Target = target;
         Action = action;
         flags_bytes = flagsBytes;
@@ -34,13 +34,19 @@ public sealed class Packet_10299 : Packet
 
     /// <inheritdoc />
     public override string ToString() =>
-        $"{UsageBy} -> {Target} | Action: {Action} | Flags: {Flags}";
+        $"{UsedBy} -> {Target} | Action: {Action} | Flags: {Flags}";
 
-    public static Packet_10299 Parse(ReadOnlySpan<byte> content)
+    public static SkillStatePacket Parse(ReadOnlySpan<byte> content)
     {
         // 패킷 길이 검사
         if (content.Length < 30)
-            return new Packet_10299(string.Empty, string.Empty, string.Empty, [], new FlagBits());
+            return new SkillStatePacket(
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                [],
+                new FlagBits()
+            );
 
         // 사용자 ID 추출 (4바이트, 4바이트 패딩 후)
         string usedBy = content[..4].To_hex();
@@ -58,6 +64,6 @@ public sealed class Packet_10299 : Packet
         content = content[6..];
 
         var flags = FlagBits.ParseFlags(flagBytes);
-        return new Packet_10299(usedBy, target, action, flagBytes, flags);
+        return new SkillStatePacket(usedBy, target, action, flagBytes, flags);
     }
 }

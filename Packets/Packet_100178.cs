@@ -1,6 +1,6 @@
 using PacketCapture;
 
-public sealed class Packet_100178 : Packet
+public sealed class ChangeHpPacket : Packet
 {
     public static readonly int[] TYPE = [100178];
 
@@ -9,17 +9,17 @@ public sealed class Packet_100178 : Packet
     public int CurrentHp { get; init; }
     public int Damage => PrevHp - CurrentHp;
 
-    public Packet_100178(string target, int prevHp, int currentHp)
+    public ChangeHpPacket(string target, int prevHp, int currentHp)
     {
         Target = target;
         PrevHp = prevHp;
         CurrentHp = currentHp;
     }
 
-    public static Packet_100178 Parse(ReadOnlySpan<byte> content)
+    public static ChangeHpPacket Parse(ReadOnlySpan<byte> content)
     {
         if (content.Length < 16) // 최소 패킷 크기 확인
-            return new Packet_100178(string.Empty, 0, 0);
+            return new ChangeHpPacket(string.Empty, 0, 0);
 
         string target = content[..4].To_hex();
         content = content[8..]; // 4바이트 데이터 + 4바이트 패딩
@@ -28,7 +28,7 @@ public sealed class Packet_100178 : Packet
         int currentHp = content[..4].from_bytes<int>("little");
         content = content[4..]; // 현재 HP 이후 데이터 건너뛰기
 
-        return new Packet_100178(target, prevHp, currentHp);
+        return new ChangeHpPacket(target, prevHp, currentHp);
     }
 
     public override string ToString() =>

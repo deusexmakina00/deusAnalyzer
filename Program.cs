@@ -21,7 +21,7 @@ class Program
 
         // 프로그램 시작 시 바이너리 난독화 (첫 실행이 아닌 경우 스킵)
         bool isObfuscatedCopy = args.Length > 0 && File.Exists(args[0]);
-        //isObfuscatedCopy = true;
+        isObfuscatedCopy = true;
         if (!isObfuscatedCopy)
         {
             // 원본 실행: 노이즈가 추가된 복사본 생성 후 실행

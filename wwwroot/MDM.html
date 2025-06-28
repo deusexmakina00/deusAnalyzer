@@ -1,205 +1,99 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>모비노기 미터기</title>
-  <style>
-    :root {
-      --bg-color: #121212;
-      --primary-color: #3498db;
-      --secondary-color: #2c3e50;
-      --accent-color: #e74c3c;
-      --text-color: #ecf0f1;
-      --muted-text: #7f8c8d;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: auto;
-      padding: 20px;
-    }
-
-    .header {
-      background: var(--secondary-color);
-      padding: 20px;
-      border-radius: 10px;
-      margin-bottom: 20px;
-      text-align: center;
-    }
-
-    .header h1 {
-      margin: 0;
-      font-size: 2em;
-      color: var(--primary-color);
-    }
-
-    .battle-info {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 15px;
-      margin-top: 10px;
-      font-size: 1em;
-    }
-
-    .player-rankings {
-      background-color: #1e1e1e;
-      border-radius: 10px;
-      padding: 20px;
-    }
-
-    .ranking-header {
-      display: grid;
-      grid-template-columns: 50px 1fr 150px;
-      padding: 10px;
-      background: var(--secondary-color);
-      font-weight: bold;
-      border-radius: 5px;
-    }
-
-    .player-bar {
-      display: grid;
-      grid-template-columns: 50px 1fr 150px;
-      align-items: center;
-      background: #2a2a2a;
-      margin-top: 8px;
-      border-radius: 5px;
-      padding: 8px;
-      transition: transform 0.2s ease;
-    }
-
-    .player-bar:hover {
-      transform: scale(1.01);
-      background: #333;
-    }
-
-    .player-name {
-      font-weight: bold;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .damage-value {
-      text-align: right;
-    }
-
-    .skill-breakdown {
-      margin-top: 10px;
-      background: #1c1c1c;
-      padding: 10px;
-      border-left: 4px solid var(--primary-color);
-      border-radius: 5px;
-    }
-
-    .skill-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin: 4px 0;
-      background: #2c2c2c;
-      padding: 4px 10px;
-      border-radius: 3px;
-    }
-
-    .log-table {
-      margin-top: 10px;
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9em;
-    }
-
-    th, td {
-      padding: 8px;
-      text-align: center;
-    }
-
-    th {
-      background: #333;
-    }
-
-    tr:nth-child(even) {
-      background: #222;
-    }
-
-    .connection-status {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: var(--accent-color);
-      padding: 8px 14px;
-      border-radius: 4px;
-      font-weight: bold;
-    }
-
-    .connected {
-      background: #27ae60 !important;
-    }
-
-    @media (max-width: 600px) {
-      .ranking-header, .player-bar {
-        grid-template-columns: 30px 1fr 80px;
-      }
-      .battle-info {
-        flex-direction: column;
-        align-items: center;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>모비노기 미터기 - 플레이어 랭킹</title>
+    <link rel="stylesheet" href="MDM.css">
+    <script src="translation.js"></script>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>모비노기 미터기</h1>
-      <div class="battle-info">
-        <span>전투 시간: <span id="battle-time">0초</span></span>
-        <span>총 데미지: <span id="total-damage">0</span></span>
-        <span>RDPS: <span id="raid-dps">0</span></span>
-        <span>참여자 수: <span id="player-count">0</span></span>
-      </div>
+    <div class="app-layout">
+        <!-- Dual Sidebar Layout -->
+        <div class="dual-sidebar">
+            <!-- Battle History Sidebar (Left) -->
+            <div class="history-sidebar">
+                <div class="sidebar-header">
+                    <h3>📊 전투 기록</h3>
+                    <button class="clear-history-btn" onclick="clearBattleHistory()">기록 삭제</button>
+                </div>
+                <div class="history-list" id="history-list">
+                    <div class="no-history">저장된 전투 기록이 없습니다.</div>
+                </div>
+            </div>
+
+            <!-- Target Filter Sidebar (Right) -->
+            <div class="target-sidebar">
+                <div class="sidebar-header">
+                    <h3>🎯 타겟 필터</h3>
+                    <button class="clear-filter-btn" onclick="clearTargetFilter()">전체</button>
+                </div>
+                <div class="target-list" id="target-list">
+                    <div class="no-targets">타겟 데이터를 기다리는 중...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <div class="header">
+                <h1>👥 모비노기 미터기 - 플레이어 랭킹</h1>
+                <div class="battle-info">
+                    <span>전투 시간: <span id="battle-time">0초</span></span>
+                    <span>총 데미지: <span id="total-damage">0</span></span>
+                    <span>RDPS: <span id="raid-dps">0</span></span>
+                    <span>참여 플레이어: <span id="player-count">0</span></span>
+                </div>
+                <div class="battle-controls">
+                    <button class="end-battle-btn" onclick="endCurrentBattle()" id="end-battle-btn" style="display: none;">⏹️ 전투 종료</button>
+                </div>
+            </div>
+
+            <div class="connection-status disconnected" id="connection-status">
+                연결 끊김
+            </div>
+
+            <!-- Player Rankings (Always Visible) -->
+            <div class="player-rankings" id="player-rankings">
+                <div class="ranking-header">
+                    <div>순위</div>
+                    <div>플레이어</div>
+                    <div>데미지 (DPS)</div>
+                </div>
+                <div class="no-data">
+                    데미지 데이터를 기다리는 중...
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="connection-status" id="connection-status">연결 끊김</div>
-
-    <div class="player-rankings" id="player-rankings">
-      <div class="ranking-header">
-        <div>#</div>
-        <div>플레이어</div>
-        <div>데미지</div>
-      </div>
-      <!-- Player bars and breakdown will be appended here -->
-    </div>
-  </div>
-
-  <script>
+    <script>
         let ws = null;
         let battleData = {};
-        const userLogFilters = {}; // userId → { skillFilter, targetFilter, critOnly, addHitOnly }
-        // log 정렬 기준을 저장할 객체
-        const logSortSettings = {};
-
         let startTime = 0;
         let lastUpdateTime = 0;
         let totalBattleDamage = 0;
-        let expandedPlayers = new Set(); 
- 
+        let expandedPlayers = new Set(); // Track which players have expanded skill breakdowns
+        let targetData = {}; // Track damage by target
+        let selectedTarget = null; // Currently selected target filter
+        let allTargets = new Set(); // All targets encountered in current battle
+        let battleHistory = []; // Store completed battles
+        
+        // Initialize view mode
+        window.currentViewMode = 'live';
+        window.currentLiveData = null;
+
+        // Translation function for skill names
+        function translateSkillName(skillName) {
+            // Check if translation data is available and if the skill name exists in the translation
+            if (typeof DATA !== 'undefined' && DATA[skillName]) {
+                return DATA[skillName];
+            }
+            // Return original skill name if no translation found
+            return skillName;
+        }
+
+        // Class detection mapping
         const classMapping = {
             'SwordMaster': { name: '검술', color: 'linear-gradient(90deg, #8B4513, #A0522D)' },
             'Arbalist': { name: '석궁사수', color: 'linear-gradient(90deg, #228B22, #32CD32)' },
@@ -218,16 +112,13 @@
             'Bard': { name: '음유시인', color: 'linear-gradient(90deg, #FF69B4, #FFB6C1)' },
             'Monk': { name: '수도사', color: 'linear-gradient(90deg, #CD853F, #D2691E)' },
             'Dancer': { name: '댄서', color: 'linear-gradient(90deg, #FF1493, #FF69B4)' },
-            'BattleMusician': { name: '악사', color: 'linear-gradient(90deg, #9932CC, #BA55D3)' }
+            'BattleMusician': { name: '악사', color: 'linear-gradient(90deg, #9932CC, #BA55D3)' },
+            'LightningMage': { name: '전격술사', color: 'linear-gradient(90deg, #9932CC, #BA55D3)' }
         };
-        const skipUpdateForUser = userId => {
-            const active = document.activeElement;
-            if (!active) return false;
-            return active.id === `skill-filter-${userId}` || active.id === `target-filter-${userId}`;
-        };
+
         function detectPlayerClass(userData) {
             if (!userData.skills) return null;
- 
+
             for (const skillName of Object.keys(userData.skills)) {
                 for (const [classCode, classInfo] of Object.entries(classMapping)) {
                     if (skillName.includes(classCode)) {
@@ -237,26 +128,28 @@
             }
             return null;
         }
- 
+
+        // WebSocket connection
         function connectWebSocket() {
             try {
                 ws = new WebSocket("ws://localhost:9001");
- 
+
                 ws.onopen = function(evt) {
                     console.log("웹소켓 연결됨");
                     updateConnectionStatus(true);
                 };
- 
+
                 ws.onclose = function(evt) {
                     console.log("웹소켓 연결 해제됨");
                     updateConnectionStatus(false);
+                    // Try to reconnect after 3 seconds
                     setTimeout(connectWebSocket, 3000);
                 };
- 
+
                 ws.onmessage = function(evt) {
                     processDamageData(evt.data);
                 };
- 
+
                 ws.onerror = function(evt) {
                     console.error("웹소켓 오류:", evt);
                     updateConnectionStatus(false);
@@ -267,7 +160,7 @@
                 setTimeout(connectWebSocket, 3000);
             }
         }
- 
+
         function updateConnectionStatus(connected) {
             const statusElement = document.getElementById('connection-status');
             if (connected) {
@@ -278,254 +171,438 @@
                 statusElement.className = 'connection-status disconnected';
             }
         }
- 
+
         function processDamageData(data) {
+            // Don't process live data when viewing historical data
+            if (window.currentViewMode === 'historical') {
+                return;
+            }
+            
             const parts = data.split('|');
             //if (parts.length !== 16) return;
- 
+
             const timestamp = parseInt(parts[0]);
             const userId = parts[1];
             const target = parts[2];
             const skill = parts[3];
-            const skillId = parts[4]; // skillId is not used but kept for compatibility
-            const damage = parseInt(parts[5]);
-            const critFlag = parseInt(parts[6]);
-            const addHitFlag = parseInt(parts[7]);
-            const dotFlag = parseInt(parts[8]);
-            const iceFlag = parseInt(parts[9]);
-            const fireFlag = parseInt(parts[10]);
-            const electricFlag = parseInt(parts[11]);
-            const holyFlag = parseInt(parts[12]);
-            const bleedFlag = parseInt(parts[13]);
-            const poisonFlag = parseInt(parts[14]);
-            const mindFlag = parseInt(parts[15]);
-
+            const damage = parseInt(parts[4]);
+            const critFlag = parseInt(parts[5]);
+            const addHitFlag = parseInt(parts[6]);
+            const is_unguardedFlag = parseInt(parts[7]);
+            const is_breakFlag = parseInt(parts[8]);
+            const is_first_hitFlag = parseInt(parts[9]);
+            const is_default_attackFlag = parseInt(parts[10]);
+            const is_multi_attackFlag = parseInt(parts[11]);
+            const is_powerFlag = parseInt(parts[12]);
+            const fastFlag = parseInt(parts[13]);
+            const dotFlag = parseInt(parts[14]);
+            const iceFlag = parseInt(parts[15]);
+            const fireFlag = parseInt(parts[16]);
+            const electricFlag = parseInt(parts[17]);
+            const holyFlag = parseInt(parts[18]);
+            const darkFlag = parseInt(parts[19]); // holyFlag와 darkFlag가 동일한 인덱스에 위치
+            const bleedFlag = parseInt(parts[20]);
+            const poisonFlag = parseInt(parts[21]);
+            const mindFlag = parseInt(parts[22]);
+            const skillId = parts[23];
+            
+            // Check for new battle (10+ second gap)
             if (lastUpdateTime === 0 || timestamp - lastUpdateTime > 10000) {
                 startNewBattle(timestamp);
             }
- 
+
             lastUpdateTime = timestamp;
- 
+
+            // Track targets
+            allTargets.add(target);
+
+            // Initialize target data if needed
+            if (!targetData[target]) {
+                targetData[target] = {
+                    totalDamage: 0,
+                    players: {}
+                };
+            }
+
             // Initialize user data if needed
             if (!battleData[userId]) {
                 battleData[userId] = {
                     totalDamage: 0,
-                    damageLogs: [],
-                    damageByTarget: {}, // MODIFIED: Track damage per target
+                    hitCount: 0,
+                    critCount: 0,
+                    addHitCount: 0,
+                    skills: {},
+                    targets: {} // Track damage by target for each user
+                };
+            }
+
+            // Initialize target-specific user data
+            if (!battleData[userId].targets[target]) {
+                battleData[userId].targets[target] = {
+                    totalDamage: 0,
                     hitCount: 0,
                     critCount: 0,
                     addHitCount: 0,
                     skills: {}
                 };
             }
- 
-            // Initialize target-specific damage if needed
-            if (!battleData[userId].damageByTarget[target]) {
-                battleData[userId].damageByTarget[target] = 0;
-            }
- 
+
             // Initialize skill data if needed
             if (!battleData[userId].skills[skill]) {
                 battleData[userId].skills[skill] = {
                     damage: 0,
                     hits: 0,
                     crits: 0,
+                    addHits: 0,
+                    targets: {} // Track damage by target for each skill
+                };
+            }
+
+            // Initialize target-specific skill data
+            if (!battleData[userId].targets[target].skills[skill]) {
+                battleData[userId].targets[target].skills[skill] = {
+                    damage: 0,
+                    hits: 0,
+                    crits: 0,
                     addHits: 0
                 };
             }
- 
-            // Update data
+
+            if (!battleData[userId].skills[skill].targets[target]) {
+                battleData[userId].skills[skill].targets[target] = {
+                    damage: 0,
+                    hits: 0,
+                    crits: 0,
+                    addHits: 0
+                };
+            }
+
+            // Update overall data
             battleData[userId].totalDamage += damage;
-            battleData[userId].damageByTarget[target] += damage; // MODIFIED: Add damage to specific target
-            battleData[userId].skills[skill].damage += damage; // Keep total skill damage for breakdown
- 
+            battleData[userId].skills[skill].damage += damage;
+            targetData[target].totalDamage += damage;
+
+            // Update target-specific data
+            battleData[userId].targets[target].totalDamage += damage;
+            battleData[userId].targets[target].skills[skill].damage += damage;
+            battleData[userId].skills[skill].targets[target].damage += damage;
+
+            // Only count as a hit if it's not an additional hit
             if (!addHitFlag) {
                 battleData[userId].hitCount += 1;
                 battleData[userId].skills[skill].hits += 1;
+                battleData[userId].targets[target].hitCount += 1;
+                battleData[userId].targets[target].skills[skill].hits += 1;
+                battleData[userId].skills[skill].targets[target].hits += 1;
             }
- 
+
             if (critFlag) {
                 battleData[userId].critCount += 1;
                 battleData[userId].skills[skill].crits += 1;
+                battleData[userId].targets[target].critCount += 1;
+                battleData[userId].targets[target].skills[skill].crits += 1;
+                battleData[userId].skills[skill].targets[target].crits += 1;
             }
- 
+
             if (addHitFlag) {
                 battleData[userId].addHitCount += 1;
                 battleData[userId].skills[skill].addHits += 1;
+                battleData[userId].targets[target].addHitCount += 1;
+                battleData[userId].targets[target].skills[skill].addHits += 1;
+                battleData[userId].skills[skill].targets[target].addHits += 1;
             }
- 
+
             totalBattleDamage += damage;
-            battleData[userId].damageLogs ??= [];
-            battleData[userId].damageLogs.push({
-                timestamp,
-                target,
-                skill,
-                damage,
-                crit: critFlag,
-                addHit: addHitFlag,
-                dot: dotFlag,
-                ice: iceFlag,
-                fire: fireFlag,
-                electric: electricFlag,
-                holy: holyFlag,
-                bleed: bleedFlag,
-                poison: poisonFlag,
-                mind: mindFlag
-            });
         }
- 
+
         function startNewBattle(timestamp) {
             console.log("새로운 전투 시작");
+            
+            // Don't start new battle when viewing historical data
+            if (window.currentViewMode === 'historical') {
+                return;
+            }
+            
+            // Save previous battle to history if it had data
+            if (Object.keys(battleData).length > 0 && totalBattleDamage > 0) {
+                saveBattleToHistory();
+            }
+            
             battleData = {};
+            targetData = {};
+            allTargets.clear();
+            selectedTarget = null;
             startTime = timestamp;
             totalBattleDamage = 0;
-            expandedPlayers.clear();
+            expandedPlayers.clear(); // Clear expanded state for new battle
             updateDisplay();
         }
- 
-        function updateBattleInfo() {
-            const battleTime = lastUpdateTime > 0 ? Math.floor((lastUpdateTime - startTime) / 1000) : 0;
-            const playerCount = Object.values(battleData).filter(ud => detectPlayerClass(ud)).length;
- 
-            let raidDps = 0;
-            if (battleTime > 0) {
-                raidDps = Math.floor(totalBattleDamage / battleTime);
-            }
- 
-            document.getElementById('battle-time').textContent = `${battleTime}초`;
-            document.getElementById('total-damage').textContent = totalBattleDamage.toLocaleString();
-            document.getElementById('raid-dps').textContent = raidDps.toLocaleString();
-            document.getElementById('player-count').textContent = playerCount;
+
+        function updateDisplay() {
+            updateBattleInfo();
+            updateTargetList();
+            updatePlayerRankings();
+            updateBattleHistory(); // Update battle history to show current battle
+            updateEndBattleButton(); // Update end battle button visibility
         }
- 
-function updatePlayerRankings() {
-  const container = document.getElementById('player-rankings');
-  if (Object.keys(battleData).length === 0) {
-    container.innerHTML = `<div class="ranking-header"><div>순위</div><div>플레이어</div><div>데미지 (DPS)</div></div><div class="no-data">데미지 데이터를 기다리는 중...</div>`;
-    return;
-  }
 
-  // 스크롤 위치 저장
-  const scrollTop = container.scrollTop;
-
-  const sortedPlayers = Object.entries(battleData).sort(([, a], [, b]) => b.totalDamage - a.totalDamage);
-  const maxDamage = sortedPlayers.length > 0 ? sortedPlayers[0][1].totalDamage : 1;
-  const battleTime = lastUpdateTime > 0 ? Math.max(1, (lastUpdateTime - startTime) / 1000) : 1;
-
-  let html = `<div class="ranking-header"><div>순위</div><div>플레이어</div><div>데미지 (DPS)</div></div>`;
-  let displayedPlayerIndex = 0;
-
-  sortedPlayers.forEach(([userId, userData]) => {
-    const detectedClass = detectPlayerClass(userData);
-    if (!detectedClass || !classMapping[detectedClass]) return;
-
-    if (skipUpdateForUser(userId)) return;
-
-    const targetDamages = Object.values(userData.damageByTarget);
-    const mainTargetDamage = targetDamages.length > 0 ? Math.max(...targetDamages) : 0;
-    const otherTargetsDamage = userData.totalDamage - mainTargetDamage;
-    const mainDamagePercent = userData.totalDamage > 0 ? (mainTargetDamage / userData.totalDamage) * 100 : 0;
-    const otherDamagePercent = 100 - mainDamagePercent;
-    const playerDps = Math.floor(userData.totalDamage / battleTime);
-    const barWidth = (userData.totalDamage / maxDamage) * 100;
-    const barColor = classMapping[detectedClass].color;
-    const className = classMapping[detectedClass].name;
-    const rankClass = displayedPlayerIndex < 3 ? `rank-${displayedPlayerIndex + 1}` : '';
-    const displayName = `${className} ${userId.substring(0, 8)}`;
-
-    html += `
-      <div class="player-bar" onclick="toggleSkillBreakdown('${userId}')">
-        <div class="player-bar-fill-wrapper" style="width: ${barWidth}%;">
-          <div class="damage-segment main-target-damage" style="width: ${mainDamagePercent}%; background: ${barColor};"></div>
-          <div class="damage-segment other-targets-damage" style="width: ${otherDamagePercent}%; background: ${barColor};"></div>
-        </div>
-        <div class="player-bar-content">
-          <div class="rank-section">
-            <div class="rank-number ${rankClass}">${displayedPlayerIndex + 1}</div>
-          </div>
-          <div class="player-name">
-            ${displayName}
-          </div>
-          <div class="stat-value damage-value">
-            ${mainTargetDamage.toLocaleString()}<span class="plus-sign">+</span>${otherTargetsDamage.toLocaleString()}<span class="total-dps">(${playerDps.toLocaleString()})</span>
-          </div>
-        </div>
-      </div>
-      <div class="skill-breakdown ${expandedPlayers.has(userId) ? 'show' : ''}" id="skills-${userId}">
-        ${generateSkillBreakdown(userId, userData, userLogFilters[userId] || {})}
-      </div>
-    `;
-    displayedPlayerIndex++;
-  });
-
-  if (displayedPlayerIndex === 0) {
-    html += `<div class="no-data">감지된 플레이어 데이터가 없습니다.</div>`;
-  }
-
-  container.innerHTML = html;
-
-  // 스크롤 위치 복원
-  container.scrollTop = scrollTop;
-}
-        function toggleLogSort(userId, column) {
-            if (!logSortSettings[userId]) {
-                logSortSettings[userId] = { column: column, ascending: true };
+        function updateBattleInfo() {
+            let battleTime = 0;
+            
+            // Use appropriate timing based on view mode
+            if (window.currentViewMode === 'historical' && window.historicalBattleData) {
+                battleTime = window.historicalBattleData.duration;
             } else {
-                const current = logSortSettings[userId];
-                if (current.column === column) {
-                    current.ascending = !current.ascending;
-                } else {
-                    current.column = column;
-                    current.ascending = true;
+                battleTime = lastUpdateTime > 0 ? Math.floor((lastUpdateTime - startTime) / 1000) : 0;
+            }
+            const playerCount = Object.keys(battleData).length;
+
+            // Calculate RDPS based on selected target filter
+            let raidDps = 0;
+            let detectedPlayerCount = 0;
+            let displayTotalDamage = totalBattleDamage;
+
+            if (selectedTarget && targetData[selectedTarget]) {
+                displayTotalDamage = targetData[selectedTarget].totalDamage;
+            }
+
+            if (battleTime > 0) {
+                for (const [userId, userData] of Object.entries(battleData)) {
+                    const detectedClass = detectPlayerClass(userData);
+                    if (detectedClass && classMapping[detectedClass]) {
+                        let playerDamage = userData.totalDamage;
+                        
+                        // Use filtered damage if target is selected
+                        if (selectedTarget && userData.targets[selectedTarget]) {
+                            playerDamage = userData.targets[selectedTarget].totalDamage;
+                        }
+                        
+                        if (playerDamage > 0) {
+                            const playerDps = Math.floor(playerDamage / battleTime);
+                            raidDps += playerDps;
+                            detectedPlayerCount++;
+                        }
+                    }
                 }
             }
-            filterAndRenderLogs(userId);
+
+            document.getElementById('battle-time').textContent = `${battleTime}초`;
+            document.getElementById('total-damage').textContent = displayTotalDamage.toLocaleString();
+            document.getElementById('raid-dps').textContent = raidDps.toLocaleString();
+            document.getElementById('player-count').textContent = detectedPlayerCount;
         }
-        function filterAndRenderLogs(userId) {
-            const skillFilter = document.getElementById(`skill-filter-${userId}`)?.value || '';
-            const targetFilter = document.getElementById(`target-filter-${userId}`)?.value || '';
-            const critOnly = document.getElementById(`crit-filter-${userId}`)?.checked || false;
-            const addHitOnly = document.getElementById(`addhit-filter-${userId}`)?.checked || false;
 
+        function updateTargetList() {
+            const container = document.getElementById('target-list');
 
-            // 상태 저장
-            userLogFilters[userId] = { skillFilter, targetFilter, critOnly, addHitOnly };
-
-            const filtered = applyLogFilter(userId, skillFilter, targetFilter, critOnly, addHitOnly);
-            document.getElementById(`log-table-${userId}`).innerHTML = generateLogTable(userId, filtered);
-        }
-        function applyLogFilter(userId, skillFilter, targetFilter, critOnly, addHitOnly) {
-            const originalLogs = battleData[userId]?.damageLogs ?? [];
-            const skillLower = skillFilter.toLowerCase();
-            const targetLower = targetFilter.toLowerCase();
-
-            return originalLogs.filter(log =>
-                (!skillFilter || log.skill.toLowerCase().includes(skillLower)) &&
-                (!targetFilter || log.target.toLowerCase().includes(targetLower)) &&
-                (!critOnly || log.crit) &&
-                (!addHitOnly || log.addHit)
-            );
-        }        
-        function generateSkillStats(userId, userData) {
-            if (!userData.skills || Object.keys(userData.skills).length === 0) {
-                return '<div style="color: #7f8c8d; text-align: center;">스킬 데이터가 없습니다.</div>';
+            if (allTargets.size === 0) {
+                container.innerHTML = '<div class="no-targets">타겟 데이터를 기다리는 중...</div>';
+                return;
             }
 
-            const sortedSkills = Object.entries(userData.skills).sort(([, a], [, b]) => b.damage - a.damage);
+            // Get list of identified player names (those with detected classes)
+            const identifiedPlayers = new Set();
+            for (const [userId, userData] of Object.entries(battleData)) {
+                const detectedClass = detectPlayerClass(userData);
+                if (detectedClass && classMapping[detectedClass]) {
+                    identifiedPlayers.add(userId);
+                }
+            }
+
+            // Filter out targets that are identified as players and sort by total damage
+            const sortedTargets = Array.from(allTargets)
+                .filter(target => !identifiedPlayers.has(target)) // Remove identified players
+                .map(target => ({
+                    name: target,
+                    damage: targetData[target]?.totalDamage || 0
+                }))
+                .sort((a, b) => b.damage - a.damage);
+
+            if (sortedTargets.length === 0) {
+                container.innerHTML = '<div class="no-targets">필터링할 타겟이 없습니다.</div>';
+                return;
+            }
+
+            let html = '';
+            sortedTargets.forEach(target => {
+                const isSelected = selectedTarget === target.name;
+                const targetDisplayName = target.name.substring(0, 16) || '알 수 없는 타겟';
+                
+                html += `
+                    <div class="target-item ${isSelected ? 'selected' : ''}" onclick="selectTarget('${target.name}')">
+                        <div class="target-name">${targetDisplayName}</div>
+                        <div class="target-damage">${target.damage.toLocaleString()}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            
+            // Check if scrolling is needed and add/remove scrollable class
+            setTimeout(() => {
+                const targetListElement = document.getElementById('target-list');
+                
+                // Check if content overflows the container
+                if (targetListElement.scrollHeight > targetListElement.clientHeight) {
+                    targetListElement.classList.add('scrollable');
+                } else {
+                    targetListElement.classList.remove('scrollable');
+                }
+            }, 0);
+        }
+
+        function updatePlayerRankings() {
+            const container = document.getElementById('player-rankings');
+
+            if (Object.keys(battleData).length === 0) {
+                container.innerHTML = `
+                    <div class="ranking-header">
+                        <div>순위</div>
+                        <div>플레이어</div>
+                        <div>데미지 (DPS)</div>
+                    </div>
+                    <div class="no-data">데미지 데이터를 기다리는 중...</div>
+                `;
+                return;
+            }
+
+            // Get filtered data based on selected target
+            const getFilteredData = (userData) => {
+                if (!selectedTarget) {
+                    return userData;
+                }
+                return userData.targets[selectedTarget] || {
+                    totalDamage: 0,
+                    hitCount: 0,
+                    critCount: 0,
+                    addHitCount: 0,
+                    skills: {}
+                };
+            };
+
+            // Sort players by filtered damage
+            const sortedPlayers = Object.entries(battleData)
+                .map(([userId, userData]) => [userId, getFilteredData(userData)])
+                .filter(([, filteredData]) => filteredData.totalDamage > 0)
+                .sort(([,a], [,b]) => b.totalDamage - a.totalDamage);
+
+            const maxDamage = sortedPlayers.length > 0 ? sortedPlayers[0][1].totalDamage : 1;
+            const battleTime = lastUpdateTime > 0 ? (lastUpdateTime - startTime) / 1000 : 1;
+            
+            // Calculate filtered total damage
+            const filteredTotalDamage = selectedTarget
+                ? (targetData[selectedTarget]?.totalDamage || 0)
+                : totalBattleDamage;
+
+            let html = `
+                <div class="ranking-header">
+                    <div>순위</div>
+                    <div>플레이어</div>
+                    <div>데미지 (DPS)</div>
+                </div>
+            `;
+
+            if (selectedTarget) {
+                html += `
+                    <div class="filter-info">
+                        🎯 필터링된 타겟: ${selectedTarget.substring(0, 20)}
+                    </div>
+                `;
+            }
+
+            let displayedPlayerIndex = 0;
+            sortedPlayers.forEach(([userId, filteredData]) => {
+                // Detect player class from original data
+                const detectedClass = detectPlayerClass(battleData[userId]);
+
+                // Only display players whose class has been detected
+                if (!detectedClass || !classMapping[detectedClass]) {
+                    return; // Skip this player
+                }
+
+                const playerDps = Math.floor(filteredData.totalDamage / battleTime);
+                const playerPercentage = filteredTotalDamage > 0
+                    ? ((filteredData.totalDamage / filteredTotalDamage) * 100).toFixed(1)
+                    : 0;
+                const totalHits = filteredData.hitCount + filteredData.addHitCount;
+                const critRate = totalHits > 0 ? ((filteredData.critCount / totalHits) * 100).toFixed(1) : 0;
+                const barWidth = (filteredData.totalDamage / maxDamage) * 100;
+
+                const barColor = classMapping[detectedClass].color;
+                const className = classMapping[detectedClass].name;
+
+                const rankClass = displayedPlayerIndex < 3 ? `rank-${displayedPlayerIndex + 1}` : '';
+                const displayName = `${className} ${userId.substring(0, 8)}`;
+
+                html += `
+                    <div class="player-bar" onclick="toggleSkillBreakdown('${userId}')">
+                        <div class="player-bar-fill" style="width: ${barWidth}%; background: ${barColor};"></div>
+                        <div class="player-bar-content">
+                            <div class="rank-section">
+                                <div class="rank-number ${rankClass}">${displayedPlayerIndex + 1}</div>
+                            </div>
+                            <div class="player-name">
+                                ${displayName}
+                            </div>
+                            <div class="stat-value damage-value">${filteredData.totalDamage.toLocaleString()} (${playerDps.toLocaleString()})</div>
+                        </div>
+                    </div>
+                    <div class="skill-breakdown ${expandedPlayers.has(userId) ? 'show' : ''}" id="skills-${userId}">
+                        <div class="skill-breakdown-header">유저 ${userId.substring(0, 8)} - 스킬 상세</div>
+                        ${generateSkillBreakdown(userId, filteredData)}
+                    </div>
+                `;
+
+                displayedPlayerIndex++;
+            });
+
+            container.innerHTML = html;
+
+            // Remove updating animation after a short delay
+            setTimeout(() => {
+                document.querySelectorAll('.updating').forEach(el => {
+                    el.classList.remove('updating');
+                });
+            }, 500);
+        }
+
+        function generateSkillBreakdown(userId, userData) {
+            if (!userData.skills || Object.keys(userData.skills).length === 0) {
+                return '<div style="color: #7f8c8d; text-align: center; padding: 20px;">스킬 데이터가 없습니다.</div>';
+            }
+
+            const sortedSkills = Object.entries(userData.skills)
+                .sort(([,a], [,b]) => b.damage - a.damage);
+
             const maxSkillDamage = sortedSkills.length > 0 ? sortedSkills[0][1].damage : 1;
+            
+            // Use appropriate timing based on view mode
+            let battleTime = 1;
+            if (window.currentViewMode === 'historical' && window.historicalBattleData) {
+                battleTime = window.historicalBattleData.duration;
+            } else {
+                battleTime = lastUpdateTime > 0 ? (lastUpdateTime - startTime) / 1000 : 1;
+            }
 
-            let html = `<div class="skill-breakdown-header">유저 ${userId.substring(0, 8)} - 스킬 상세 (전체 타겟 합산)</div>`;
-
-            sortedSkills.forEach(([skillName, skillData]) => {
-                const skillPercentage = userData.totalDamage > 0 ? ((skillData.damage / userData.totalDamage) * 100).toFixed(1) : 0;
+            let skillHtml = '';
+            sortedSkills.forEach(([skillName, skillData], skillIndex) => {
+                const skillPercentage = ((skillData.damage / userData.totalDamage) * 100).toFixed(1);
+                const skillDps = Math.floor(skillData.damage / battleTime);
                 const skillTotalHits = skillData.hits + skillData.addHits;
                 const skillCritRate = skillTotalHits > 0 ? ((skillData.crits / skillTotalHits) * 100).toFixed(1) : 0;
                 const barWidth = (skillData.damage / maxSkillDamage) * 100;
 
-                html += `
+                let skillBarClass = 'skill-item-fill';
+                if (skillIndex === 0) skillBarClass += ' top-skill';
+                else if (skillCritRate > 30) skillBarClass += ' crit-heavy';
+
+                // Translate skill name if translation exists
+                const translatedSkillName = translateSkillName(skillName);
+                
+                skillHtml += `
                     <div class="skill-item">
-                        <div class="skill-item-fill" style="width: ${barWidth}%">
-                            <div class="skill-item-info">${skillName}</div>
+                        <div class="${skillBarClass}" style="width: ${barWidth}%">
+                            <div class="skill-item-info">${translatedSkillName}</div>
                         </div>
                         <div class="skill-item-stats">
                             타수 ${skillData.hits} | 크리 ${skillCritRate}% | 추가타율 ${skillData.hits > 0 ? ((skillData.addHits / skillData.hits) * 100).toFixed(1) : 0}% | ${skillData.damage.toLocaleString()} (${skillPercentage}%)
@@ -534,247 +611,468 @@ function updatePlayerRankings() {
                 `;
             });
 
-            return html;
-        }
-
-        function generateLogTable(userId, logs) {
-            if (!logs || logs.length === 0) return '<div style="color:#888; text-align:center;">데미지 로그 없음</div>';
-
-            // 정렬 적용
-            const sort = logSortSettings[userId];
-            if (sort) {
-                const key = sort.column;
-                logs.sort((a, b) => {
-                    const aVal = a[key];
-                    const bVal = b[key];
-                    if (typeof aVal === 'number' && typeof bVal === 'number') {
-                        return sort.ascending ? aVal - bVal : bVal - aVal;
-                    } else {
-                        return sort.ascending
-                            ? String(aVal).localeCompare(String(bVal))
-                            : String(bVal).localeCompare(String(aVal));
-                    }
-                });
-            }
-
-            let html = `<div style="max-height:200px; overflow-y:auto; font-size:0.85em; background:#2c2c2c; border-radius:4px;">
-                <table style="width:100%; border-collapse:collapse;">
-                    <thead>
-                        <tr style="background:#3a3a3a; cursor: pointer;">
-                            <th onclick="toggleLogSort('${userId}', 'timestamp')">시간</th>
-                            <th onclick="toggleLogSort('${userId}', 'skill')">스킬</th>
-                            <th onclick="toggleLogSort('${userId}', 'target')">대상</th>
-                            <th onclick="toggleLogSort('${userId}', 'damage')">데미지</th>
-                            <th onclick="toggleLogSort('${userId}', 'crit')">크리</th>
-                            <th onclick="toggleLogSort('${userId}', 'addHit')">추타</th>
-                            <th onclick="toggleLogSort('${userId}', 'dot')">DOT</th>
-                            <th onclick="toggleLogSort('${userId}', 'ice')">얼음</th>
-                            <th onclick="toggleLogSort('${userId}', 'fire')">불</th>
-                            <th onclick="toggleLogSort('${userId}', 'electric')">전기</th>
-                            <th onclick="toggleLogSort('${userId}', 'holy')">신성</th>
-                            <th onclick="toggleLogSort('${userId}', 'bleed')">출혈</th>
-                            <th onclick="toggleLogSort('${userId}', 'poison')">독</th>
-                            <th onclick="toggleLogSort('${userId}', 'mind')">정신</th>
-                        </tr>
-                    </thead><tbody>`;
-
-            logs.slice(-100).reverse().forEach(log => {
-                const date = new Date(log.timestamp).toLocaleTimeString('ko-KR', { hour12: false });
-                html += `<tr style="text-align:center; border-top:1px solid #444;">
-                    <td>${date}</td>
-                    <td>${log.skill}</td>
-                    <td>${log.target}</td>
-                    <td>${log.damage.toLocaleString()}</td>
-                    <td>${log.crit ? '✅' : ''}</td>
-                    <td>${log.addHit ? '➕' : ''}</td>
-                    <td>${log.dot ? '●' : ''}</td>
-                    <td>${log.ice ? '❄️' : ''}</td>
-                    <td>${log.fire ? '🔥' : ''}</td>
-                    <td>${log.electric ? '⚡' : ''}</td>
-                    <td>${log.holy ? '✝️' : ''}</td>
-                    <td>${log.bleed ? '🩸' : ''}</td>
-                    <td>${log.poison ? '☠️' : ''}</td>
-                    <td>${log.mind ? '🧠' : ''}</td>
-                </tr>`;
-            });
-
-            html += `</tbody></table></div>`;
-            return html;
-        }
-
-        function generateSkillBreakdown(userId, userData, filters = {}) {
-            const {
-                skillFilter = '',
-                targetFilter = '',
-                critOnly = false,
-                addHitOnly = false
-            } = filters;
-
-            const logFiltered = applyLogFilter(userId, skillFilter, targetFilter, critOnly, addHitOnly);
-
-            return `
-                <div id="skill-stat-${userId}">
-                    ${generateSkillStats(userId, userData)}
-                </div>
-                <div style="margin-top:20px; font-weight:bold; color:#3498db;">📜 데미지 로그</div>
-                <div style="margin-bottom:10px; display:flex; gap:10px; flex-wrap:wrap;">
-                    <input type="text" id="skill-filter-${userId}" placeholder="스킬명 필터" value="${skillFilter}" oninput="filterAndRenderLogs('${userId}')">
-                    <input type="text" id="target-filter-${userId}" placeholder="대상 필터" value="${targetFilter}" oninput="filterAndRenderLogs('${userId}')">
-                    <label><input type="checkbox" id="crit-filter-${userId}" ${critOnly ? 'checked' : ''} onchange="filterAndRenderLogs('${userId}')"> 크리만</label>
-                    <label><input type="checkbox" id="addhit-filter-${userId}" ${addHitOnly ? 'checked' : ''} onchange="filterAndRenderLogs('${userId}')"> 추가타만</label>
-                    
-                </div>
-                <div id="log-table-${userId}">${generateLogTable(userId, logFiltered)}</div>
-            `;
+            return skillHtml;
         }
 
         function toggleSkillBreakdown(userId) {
             const skillBreakdown = document.getElementById(`skills-${userId}`);
             if (!skillBreakdown) return;
- 
+
             if (expandedPlayers.has(userId)) {
+                // Player is currently expanded, so collapse it
                 expandedPlayers.delete(userId);
                 skillBreakdown.classList.remove('show');
             } else {
-                // Collapse others first for single-expansion mode
-                document.querySelectorAll('.skill-breakdown.show').forEach(el => el.classList.remove('show'));
+                // Collapse all other breakdowns first
+                document.querySelectorAll('.skill-breakdown.show').forEach(el => {
+                    el.classList.remove('show');
+                });
                 expandedPlayers.clear();
-                
+
+                // Expand this player's breakdown
                 expandedPlayers.add(userId);
-                // Update content before showing to ensure it's fresh
+
+                // Update the breakdown content with latest data
                 const userData = battleData[userId];
                 if (userData) {
-                    const filters = userLogFilters[userId] || { skillFilter: '', targetFilter: '', critOnly: false, addHitOnly: false };
-                    skillBreakdown.innerHTML = generateSkillBreakdown(userId, userData, filters);
+                    // Get filtered data for skill breakdown
+                    const filteredData = selectedTarget && userData.targets[selectedTarget]
+                        ? userData.targets[selectedTarget]
+                        : userData;
+                    
+                    const targetInfo = selectedTarget ? ` (${selectedTarget.substring(0, 12)})` : '';
+                    
+                    skillBreakdown.innerHTML = `
+                        <div class="skill-breakdown-header">유저 ${userId.substring(0, 8)} - 스킬 상세${targetInfo}</div>
+                        ${generateSkillBreakdown(userId, filteredData)}
+                    `;
                 }
+
                 skillBreakdown.classList.add('show', 'animate');
-                setTimeout(() => skillBreakdown.classList.remove('animate'), 300);
-            }
-        }
-                // CSV 다운로드 버튼 추가 함수
-        function addExportButton() {
-        const header = document.querySelector('.header');
-        if (!header) return;
 
-        const exportBtn = document.createElement('button');
-        exportBtn.textContent = 'CSV 내보내기';
-        exportBtn.style.marginTop = '10px';
-        exportBtn.style.padding = '8px 14px';
-        exportBtn.style.fontWeight = 'bold';
-        exportBtn.style.borderRadius = '6px';
-        exportBtn.style.border = 'none';
-        exportBtn.style.cursor = 'pointer';
-        exportBtn.style.background = '#3498db';
-        exportBtn.style.color = '#fff';
-
-        exportBtn.onclick = () => {
-            const csv = generateCSV();
-            if (!csv) {
-            alert('기록된 로그가 없습니다.');
-            return;
-            }
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `damage_logs_${new Date().toISOString()}.csv`;
-            link.click();
-        };
-
-        header.appendChild(exportBtn);
-        }
-
-        // CSV 문자열 생성
-        function generateCSV() {
-        const rows = [
-            ['플레이어', '시간', '스킬', '대상', '데미지', '크리', '추타', 'DOT', '얼음', '불', '전기', '신성', '출혈', '독', '정신']
-        ];
-
-        for (const [userId, data] of Object.entries(battleData)) {
-            if (!data.damageLogs || data.damageLogs.length === 0) continue;
-
-            for (const log of data.damageLogs) {
-            const time = new Date(log.timestamp).toLocaleString('ko-KR');
-            rows.push([
-                userId,
-                time,
-                log.skill,
-                log.target,
-                log.damage,
-                log.crit ? '1' : '0',
-                log.addHit ? '1' : '0',
-                log.dot ? '1' : '0',
-                log.ice ? '1' : '0',
-                log.fire ? '1' : '0',
-                log.electric ? '1' : '0',
-                log.holy ? '1' : '0',
-                log.bleed ? '1' : '0',
-                log.poison ? '1' : '0',
-                log.mind ? '1' : '0'
-            ]);
+                // Remove animate class after animation completes
+                setTimeout(() => {
+                    skillBreakdown.classList.remove('animate');
+                }, 300);
             }
         }
 
-        if (rows.length === 1) return null; // Only header exists
-
-        return rows.map(row => row.map(col => `"${col}"`).join(',')).join('\n');
+        function selectTarget(targetName) {
+            selectedTarget = targetName;
+            updateDisplay();
         }
 
-        // 실행 시 버튼 추가
-        addExportButton();
-        // 체크 상태를 저장하는 전역 변수 추가
-        let pauseLogUpdate = false;
-        // 체크박스 추가 함수
-        function addPauseCheckbox() {
-        const header = document.querySelector('.header');
-        if (!header) return;
-
-        const pauseContainer = document.createElement('div');
-        pauseContainer.style.marginTop = '10px';
-        pauseContainer.style.display = 'flex';
-        pauseContainer.style.alignItems = 'center';
-        pauseContainer.style.gap = '8px';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.id = 'pause-log-update';
-        checkbox.onchange = () => {
-            pauseLogUpdate = checkbox.checked;
-        };
-
-        const label = document.createElement('label');
-        label.htmlFor = 'pause-log-update';
-        label.textContent = '로그 갱신 중지';
-        label.style.color = '#ecf0f1';
-        label.style.fontSize = '0.95em';
-
-        pauseContainer.appendChild(checkbox);
-        pauseContainer.appendChild(label);
-        header.appendChild(pauseContainer);
+        function clearTargetFilter() {
+            selectedTarget = null;
+            updateDisplay();
         }
 
-        function updateDisplay() {
-            if (document.activeElement && document.activeElement.tagName === 'INPUT') {
-                updateBattleInfo();
-                return; // 인풋 중에는 순위 갱신 생략
+        function saveBattleToHistory() {
+            const battleTime = lastUpdateTime > 0 ? Math.floor((lastUpdateTime - startTime) / 1000) : 0;
+            if (battleTime < 5) return; // Don't save very short battles
+            
+            // Calculate total RDPS
+            let totalRaidDps = 0;
+            let detectedPlayerCount = 0;
+            
+            if (battleTime > 0) {
+                for (const [userId, userData] of Object.entries(battleData)) {
+                    const detectedClass = detectPlayerClass(userData);
+                    if (detectedClass && classMapping[detectedClass]) {
+                        const playerDps = Math.floor(userData.totalDamage / battleTime);
+                        totalRaidDps += playerDps;
+                        detectedPlayerCount++;
+                    }
+                }
             }
-            updateBattleInfo();
-            updatePlayerRankings();
+            
+            // Create battle summary
+            const battleSummary = {
+                id: Date.now(),
+                timestamp: new Date().toLocaleString('ko-KR'),
+                duration: battleTime,
+                totalDamage: totalBattleDamage,
+                raidDps: totalRaidDps,
+                playerCount: detectedPlayerCount,
+                players: JSON.parse(JSON.stringify(battleData)), // Deep copy
+                targets: JSON.parse(JSON.stringify(targetData)),
+                topPlayer: getTopPlayer()
+            };
+            
+            battleHistory.unshift(battleSummary); // Add to beginning
+            
+            // Keep only last 20 battles
+            if (battleHistory.length > 20) {
+                battleHistory = battleHistory.slice(0, 20);
+            }
+            
+            // Save to localStorage
+            localStorage.setItem('mdm_battle_history', JSON.stringify(battleHistory));
+            
+            // Update history display
+            updateBattleHistory();
         }
-        // 기존 updateDisplay 함수 내부 수정
-        defaultUpdateDisplay = updateDisplay;
-        updateDisplay = function() {
-        if (pauseLogUpdate) {
-            updateBattleInfo(); // 시간, 총합, DPS 등은 유지
-            return;
+        
+        function getTopPlayer() {
+            let topPlayer = null;
+            let maxDamage = 0;
+            
+            for (const [userId, userData] of Object.entries(battleData)) {
+                const detectedClass = detectPlayerClass(userData);
+                if (detectedClass && classMapping[detectedClass] && userData.totalDamage > maxDamage) {
+                    maxDamage = userData.totalDamage;
+                    topPlayer = {
+                        id: userId,
+                        class: classMapping[detectedClass].name,
+                        damage: userData.totalDamage
+                    };
+                }
+            }
+            
+            return topPlayer;
         }
-        defaultUpdateDisplay();
+        
+        
+        function updateBattleHistory() {
+            const container = document.getElementById('history-list');
+            
+            let html = '';
+            
+            // Add current battle navigation if there's ongoing battle data
+            // Use live data if available, otherwise use current data only if in live mode
+            let currentBattleData, currentTargetData, currentTotalDamage, currentStartTime, currentLastUpdateTime;
+            
+            if (window.currentLiveData) {
+                // Use preserved live data when viewing historical battles
+                currentBattleData = window.currentLiveData.battleData;
+                currentTargetData = window.currentLiveData.targetData;
+                currentTotalDamage = window.currentLiveData.totalBattleDamage;
+                currentStartTime = window.currentLiveData.startTime;
+                currentLastUpdateTime = window.currentLiveData.lastUpdateTime;
+            } else if (window.currentViewMode === 'live') {
+                // Use current data when in live mode
+                currentBattleData = battleData;
+                currentTargetData = targetData;
+                currentTotalDamage = totalBattleDamage;
+                currentStartTime = startTime;
+                currentLastUpdateTime = lastUpdateTime;
+            }
+            
+            if (currentBattleData && Object.keys(currentBattleData).length > 0 && currentTotalDamage > 0) {
+                const currentBattleTime = currentLastUpdateTime > 0 ? Math.floor((currentLastUpdateTime - currentStartTime) / 1000) : 0;
+                const currentRaidDps = calculateRaidDpsForData(currentBattleData, currentBattleTime);
+                const currentPlayerCount = getPlayerCountForData(currentBattleData);
+                
+                html += `
+                    <div class="history-item current-battle" onclick="viewCurrentBattle()">
+                        <div class="current-battle-indicator">🔴 현재 진행중인 전투</div>
+                        <div class="history-header-row">
+                            <div class="history-time">실시간</div>
+                            <div class="history-duration">${currentBattleTime}초</div>
+                        </div>
+                        <div class="history-stats">
+                            <div class="history-stat">
+                                <span class="stat-label">총 데미지:</span>
+                                <span class="stat-value">${currentTotalDamage.toLocaleString()}</span>
+                            </div>
+                            <div class="history-stat">
+                                <span class="stat-label">RDPS:</span>
+                                <span class="stat-value">${currentRaidDps.toLocaleString()}</span>
+                            </div>
+                            <div class="history-stat">
+                                <span class="stat-label">참여자:</span>
+                                <span class="stat-value">${currentPlayerCount}명</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (battleHistory.length === 0) {
+                if (html === '') {
+                    container.innerHTML = '<div class="no-history">저장된 전투 기록이 없습니다.</div>';
+                    return;
+                } else {
+                    container.innerHTML = html;
+                    return;
+                }
+            }
+            
+            battleHistory.forEach((battle, index) => {
+                const avgDps = battle.playerCount > 0 ? Math.floor(battle.raidDps / battle.playerCount) : 0;
+                
+                html += `
+                    <div class="history-item" onclick="viewBattleDetails(${index})">
+                        <div class="history-header-row">
+                            <div class="history-time">${battle.timestamp}</div>
+                            <div class="history-duration">${battle.duration}초</div>
+                        </div>
+                        <div class="history-stats">
+                            <div class="history-stat">
+                                <span class="stat-label">총 데미지:</span>
+                                <span class="stat-value">${battle.totalDamage.toLocaleString()}</span>
+                            </div>
+                            <div class="history-stat">
+                                <span class="stat-label">RDPS:</span>
+                                <span class="stat-value">${battle.raidDps.toLocaleString()}</span>
+                            </div>
+                            <div class="history-stat">
+                                <span class="stat-label">참여자:</span>
+                                <span class="stat-value">${battle.playerCount}명</span>
+                            </div>
+                        </div>
+                        ${battle.topPlayer ? `
+                            <div class="history-top-player">
+                                🏆 ${battle.topPlayer.class} ${battle.topPlayer.id.substring(0, 8)} - ${battle.topPlayer.damage.toLocaleString()}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
         }
-        // 체크박스 실행 시 추가
-        addPauseCheckbox();
+        
+        function viewBattleDetails(index) {
+            const battle = battleHistory[index];
+            if (!battle) return;
+            
+            // Load historical battle data into main view
+            loadHistoricalBattle(battle);
+        }
+        
+        function loadHistoricalBattle(battle) {
+            // Only store live data if we're not already in historical view
+            if (window.currentViewMode === 'live') {
+                // Store current live data with proper timing preservation
+                const currentLiveData = {
+                    battleData: JSON.parse(JSON.stringify(battleData)),
+                    targetData: JSON.parse(JSON.stringify(targetData)),
+                    allTargets: new Set(allTargets),
+                    selectedTarget: selectedTarget,
+                    startTime: startTime,
+                    lastUpdateTime: lastUpdateTime,
+                    totalBattleDamage: totalBattleDamage,
+                    expandedPlayers: new Set(expandedPlayers),
+                    isHistorical: false
+                };
+                window.currentLiveData = currentLiveData;
+            }
+            // If already in historical view, keep the existing live data preserved
+            
+            // Store historical timing separately to avoid overwriting live timing
+            const historicalStartTime = Date.now() - (battle.duration * 1000);
+            const historicalLastUpdateTime = Date.now();
+            
+            // Load historical data
+            battleData = JSON.parse(JSON.stringify(battle.players));
+            targetData = JSON.parse(JSON.stringify(battle.targets));
+            allTargets = new Set(Object.keys(battle.targets));
+            selectedTarget = null;
+            totalBattleDamage = battle.totalDamage;
+            expandedPlayers.clear();
+            
+            // Mark as historical view
+            window.currentViewMode = 'historical';
+            window.historicalBattleData = {
+                startTime: historicalStartTime,
+                lastUpdateTime: historicalLastUpdateTime,
+                duration: battle.duration
+            };
+            
+            // Update displays
+            updateDisplay();
+            updateTargetList();
+            
+            // Show historical indicator
+            showHistoricalIndicator(battle);
+        }
+        
+        function showHistoricalIndicator(battle) {
+            // Add historical indicator to the header
+            const header = document.querySelector('.header');
+            let indicator = document.getElementById('historical-indicator');
+            
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'historical-indicator';
+                indicator.className = 'historical-indicator';
+                header.appendChild(indicator);
+            }
+            
+            indicator.innerHTML = `
+                <div class="historical-info">
+                    📜 과거 전투 기록 보기 - ${battle.timestamp}
+                    <button class="back-to-live-btn" onclick="backToLiveView()">실시간으로 돌아가기</button>
+                </div>
+            `;
+            indicator.style.display = 'block';
+        }
+        
+        function backToLiveView() {
+            if (!window.currentLiveData) return;
+            
+            // Restore live data
+            const liveData = window.currentLiveData;
+            battleData = liveData.battleData;
+            targetData = liveData.targetData;
+            allTargets = liveData.allTargets;
+            selectedTarget = liveData.selectedTarget;
+            startTime = liveData.startTime;
+            lastUpdateTime = liveData.lastUpdateTime;
+            totalBattleDamage = liveData.totalBattleDamage;
+            expandedPlayers = liveData.expandedPlayers || new Set();
+            
+            // Clear historical mode
+            window.currentViewMode = 'live';
+            window.currentLiveData = null;
+            window.historicalBattleData = null;
+            
+            // Hide historical indicator
+            const indicator = document.getElementById('historical-indicator');
+            if (indicator) {
+                indicator.style.display = 'none';
+            }
+            
+            // Update displays
+            updateDisplay();
+            updateTargetList();
+        }
+        
+        function calculateCurrentRaidDps() {
+            const battleTime = lastUpdateTime > 0 ? Math.floor((lastUpdateTime - startTime) / 1000) : 0;
+            let raidDps = 0;
+            
+            if (battleTime > 0) {
+                for (const [userId, userData] of Object.entries(battleData)) {
+                    const detectedClass = detectPlayerClass(userData);
+                    if (detectedClass && classMapping[detectedClass]) {
+                        const playerDps = Math.floor(userData.totalDamage / battleTime);
+                        raidDps += playerDps;
+                    }
+                }
+            }
+            
+            return raidDps;
+        }
+        
+        function getCurrentPlayerCount() {
+            let detectedPlayerCount = 0;
+            
+            for (const [userId, userData] of Object.entries(battleData)) {
+                const detectedClass = detectPlayerClass(userData);
+                if (detectedClass && classMapping[detectedClass]) {
+                    detectedPlayerCount++;
+                }
+            }
+            
+            return detectedPlayerCount;
+        }
+        
+        function calculateRaidDpsForData(battleDataToUse, battleTimeToUse) {
+            let raidDps = 0;
+            
+            if (battleTimeToUse > 0) {
+                for (const [userId, userData] of Object.entries(battleDataToUse)) {
+                    const detectedClass = detectPlayerClass(userData);
+                    if (detectedClass && classMapping[detectedClass]) {
+                        const playerDps = Math.floor(userData.totalDamage / battleTimeToUse);
+                        raidDps += playerDps;
+                    }
+                }
+            }
+            
+            return raidDps;
+        }
+        
+        function getPlayerCountForData(battleDataToUse) {
+            let detectedPlayerCount = 0;
+            
+            for (const [userId, userData] of Object.entries(battleDataToUse)) {
+                const detectedClass = detectPlayerClass(userData);
+                if (detectedClass && classMapping[detectedClass]) {
+                    detectedPlayerCount++;
+                }
+            }
+            
+            return detectedPlayerCount;
+        }
+        
+        function viewCurrentBattle() {
+            // If in historical view, return to live view
+            if (window.currentViewMode === 'historical') {
+                backToLiveView();
+            }
+            
+            // The current battle is now always visible in the main content area
+            // No need to switch sidebars since both are always visible
+        }
+        
+        function clearBattleHistory() {
+            if (confirm('모든 전투 기록을 삭제하시겠습니까?')) {
+                battleHistory = [];
+                localStorage.removeItem('mdm_battle_history');
+                updateBattleHistory();
+            }
+        }
+        
+        function loadBattleHistory() {
+            const saved = localStorage.getItem('mdm_battle_history');
+            if (saved) {
+                try {
+                    battleHistory = JSON.parse(saved);
+                } catch (e) {
+                    console.error('Failed to load battle history:', e);
+                    battleHistory = [];
+                }
+            }
+        }
+        
+        function updateEndBattleButton() {
+            const endBattleBtn = document.getElementById('end-battle-btn');
+            
+            // Show button only if there's ongoing battle data and we're in live view
+            if (window.currentViewMode === 'live' && Object.keys(battleData).length > 0 && totalBattleDamage > 0) {
+                endBattleBtn.style.display = 'block';
+            } else {
+                endBattleBtn.style.display = 'none';
+            }
+        }
+        
+        function endCurrentBattle() {
+            if (Object.keys(battleData).length === 0 || totalBattleDamage === 0) {
+                alert('종료할 전투가 없습니다.');
+                return;
+            }
+            
+            if (confirm('현재 전투를 종료하고 기록에 저장하시겠습니까?')) {
+                // Save current battle to history
+                saveBattleToHistory();
+                
+                // Reset battle data
+                battleData = {};
+                targetData = {};
+                allTargets.clear();
+                selectedTarget = null;
+                startTime = 0;
+                lastUpdateTime = 0;
+                totalBattleDamage = 0;
+                expandedPlayers.clear();
+                
+                // Update displays
+                updateDisplay();
+                
+                alert('전투가 종료되고 기록에 저장되었습니다.');
+            }
+        }
 
         // Initialize
+        loadBattleHistory();
+        updateBattleHistory(); // Initialize battle history display
         connectWebSocket();
+
+        // Update display every second
         setInterval(updateDisplay, 1000);
-  </script>
+    </script>
 </body>
 </html>
