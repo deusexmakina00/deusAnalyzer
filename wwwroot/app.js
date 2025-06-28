@@ -33,8 +33,15 @@ class DamageMeterApp {
         this.filters = {
             skillFilter: '',
             filterDot: false,
-            autoReset: true
+            autoReset: true,
+            autoSessionEnd: true // 자동 세션 종료 기능
         };
+        
+        // 자동 세션 종료 관련 변수
+        this.autoSessionEndTimeout = 20000; // 20초 (밀리초)
+        this.lastDamageTime = null;
+        this.sessionEndTimer = null;
+        this.sessionEndTime = null; // 세션이 종료된 시간
         
         // 통계 데이터
         this.statistics = {
@@ -56,7 +63,8 @@ class DamageMeterApp {
     }
 
     // ========== 초기화 ==========
-    init() {        this.initElements();
+    init() {
+        this.initElements();
         this.initEventListeners();
         this.initWebSocket();
         this.loadTheme();
@@ -79,6 +87,8 @@ class DamageMeterApp {
         this.elements.skillFilter = document.getElementById('skill-filter');
         this.elements.filterDot = document.getElementById('filter-dot');
         this.elements.autoReset = document.getElementById('auto-reset');
+        this.elements.autoSessionEnd = document.getElementById('auto-session-end');
+        this.elements.sessionTimeout = document.getElementById('session-timeout');
         
         // 선택 요소들
         this.elements.selectedTargetDisplay = document.getElementById('selected-target-display');
@@ -131,6 +141,12 @@ class DamageMeterApp {
         }
         if (this.elements.autoReset) {
             this.elements.autoReset.addEventListener('change', () => this.updateFilter());
+        }
+        if (this.elements.autoSessionEnd) {
+            this.elements.autoSessionEnd.addEventListener('change', () => this.updateFilter());
+        }
+        if (this.elements.sessionTimeout) {
+            this.elements.sessionTimeout.addEventListener('input', () => this.updateSessionTimeout());
         }
         
         // 탭 이벤트 (모바일 터치 지원)
@@ -331,6 +347,19 @@ class DamageMeterApp {
             this.updateSessionStatus('🟢 진행중');
         }
 
+        // 세션이 종료된 상태에서 새로운 데미지가 들어오면 모든 데이터 초기화 후 새 세션 시작
+        if (this.sessionEndTime) {
+            console.log('세션이 종료된 상태에서 새로운 데미지 감지, 모든 데이터를 초기화하고 새 세션을 시작합니다');
+            this.resetData(); // 모든 데이터 초기화
+            this.sessionStartTime = Date.now(); // 새 세션 시작 시간 설정
+            this.sessionEndTime = null; // 세션 종료 시간 초기화
+            this.updateSessionStatus('🟢 진행중');
+        }
+
+        // 자동 세션 종료 타이머 관리
+        this.lastDamageTime = Date.now();
+        this.resetSessionEndTimer();
+
         // 사용자 데이터 업데이트
         const userKey = user_name;
         if (!this.damageData.has(userKey)) {
@@ -488,9 +517,13 @@ class DamageMeterApp {
     updateBattleInfo() {
         if (!this.elements.battleTime) return;
 
-        // 전투 시간
-        const elapsed = this.sessionStartTime ? 
-            Math.floor((Date.now() - this.sessionStartTime) / 1000) : 0;
+        // 전투 시간 계산
+        let elapsed = 0;
+        if (this.sessionStartTime) {
+            // 세션이 종료된 경우 종료 시간까지만 계산, 아닌 경우 현재 시간까지 계산
+            const endTime = this.sessionEndTime || Date.now();
+            elapsed = Math.floor((endTime - this.sessionStartTime) / 1000);
+        }
         this.elements.battleTime.textContent = `${elapsed}초`;
 
         // 총 데미지
@@ -924,6 +957,28 @@ class DamageMeterApp {
         if (this.elements.autoReset) {
             this.filters.autoReset = this.elements.autoReset.checked;
         }
+        if (this.elements.autoSessionEnd) {
+            this.filters.autoSessionEnd = this.elements.autoSessionEnd.checked;
+            // 자동 세션 종료 설정이 변경되면 타이머를 재설정
+            if (this.filters.autoSessionEnd && this.sessionStartTime) {
+                this.resetSessionEndTimer();
+            } else {
+                this.clearSessionEndTimer();
+            }
+        }
+    }
+
+    updateSessionTimeout() {
+        if (this.elements.sessionTimeout) {
+            const timeoutValue = parseInt(this.elements.sessionTimeout.value);
+            if (timeoutValue >= 5 && timeoutValue <= 300) {
+                this.autoSessionEndTimeout = timeoutValue * 1000; // 초를 밀리초로 변환
+                // 현재 세션이 진행 중이면 타이머를 재설정
+                if (this.filters.autoSessionEnd && this.sessionStartTime) {
+                    this.resetSessionEndTimer();
+                }
+            }
+        }
     }
 
     // ========== 선택 관리 ==========
@@ -1021,6 +1076,16 @@ class DamageMeterApp {
         this.virtualScroll.totalHeight = 0;
         this.virtualScroll.startIndex = 0;
         this.virtualScroll.endIndex = 0;
+        
+        // 로그 컨테이너 내용 지우기
+        if (this.elements.logContainer) {
+            this.elements.logContainer.innerHTML = '<div class="no-data-message">로그 데이터를 기다리는 중...</div>';
+        }
+        
+        // 자동 세션 종료 타이머 초기화
+        this.clearSessionEndTimer();
+        this.lastDamageTime = null;
+        this.sessionEndTime = null; // 세션 종료 시간도 초기화
         
         this.updateSessionStatus('⚪ 초기화됨');
         console.log('데이터가 초기화되었습니다.');
@@ -1531,6 +1596,34 @@ class DamageMeterApp {
         });
         
         container.innerHTML = html;
+    }
+
+    // ========== 자동 세션 종료 관리 ==========
+    resetSessionEndTimer() {
+        this.clearSessionEndTimer();
+        
+        if (this.filters.autoSessionEnd && this.sessionStartTime) {
+            this.sessionEndTimer = setTimeout(() => {
+                this.endSession();
+            }, this.autoSessionEndTimeout);
+        }
+    }
+    
+    clearSessionEndTimer() {
+        if (this.sessionEndTimer) {
+            clearTimeout(this.sessionEndTimer);
+            this.sessionEndTimer = null;
+        }
+    }
+    
+    endSession() {
+        if (this.sessionStartTime && !this.sessionEndTime) {
+            this.sessionEndTime = Date.now(); // 세션 종료 시간 기록
+            this.updateSessionStatus('🟡 세션 종료 (비활성)');
+            this.clearSessionEndTimer();
+            const timeoutSeconds = this.autoSessionEndTimeout / 1000;
+            console.log(`세션이 자동으로 종료되었습니다 (${timeoutSeconds}초간 비활성)`);
+        }
     }
 
     getComparisonData() {

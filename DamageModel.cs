@@ -9,6 +9,9 @@ public class DamageModel
     public FlagBits Flags { get; set; } = new FlagBits();
     public byte[] FlagBytes { get; set; } = Array.Empty<byte>();
 
+    // 사용자의 데미지 여부
+    public int SelfTarget { get; set; } = 0;
+
     public override string ToString() =>
         $"{UsedBy} -> {Target} | Damage: {Damage} | Skill Name: {SkillName} | Flags: {Flags}";
 
@@ -48,6 +51,7 @@ public class DamageModel
             Flags.Bleed ? 1 : 0,
             Flags.Poison ? 1 : 0,
             Flags.Mind ? 1 : 0,
+            SelfTarget,
         ];
 
         return string.Join("|", values);

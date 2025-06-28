@@ -76,6 +76,18 @@
                         자동 세션 초기화
                     </label>
                 </div>
+                <div class="filter-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="auto-session-end" checked>
+                        <span class="checkbox-custom"></span>
+                        자동 세션 종료
+                    </label>
+                    <div class="input-group" style="margin-top: 8px;">
+                        <input type="number" id="session-timeout" value="20" min="5" max="300" 
+                               placeholder="초" style="width: 60px; text-align: center;">
+                        <span style="margin-left: 4px; color: var(--text-secondary);">초</span>
+                    </div>
+                </div>
             </div>
 
             <!-- 타겟 선택 -->

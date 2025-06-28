@@ -307,7 +307,6 @@ public sealed class PacketCaptureManager : IDisposable
                         logger.Error(ex.StackTrace);
                     }
                 }
-                _skillMatcher.CleanupOldSkills(_lastAt);
 
                 // 처리된 패킷들까지만 버퍼에서 제거
                 if (maxProcessedEnd > 0)

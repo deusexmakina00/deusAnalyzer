@@ -1079,10 +1079,12 @@ body {
 .input-group {
     display: flex;
     gap: 8px;
-    align-items: center;
+    align-items: stretch; /* 버튼과 입력 필드의 높이를 맞춤 */
+    flex-wrap: nowrap; /* 줄바뀜 방지 */
 }
 
-.input-group input[type="text"] {
+.input-group input[type="text"],
+.input-group input[type="number"] {
     flex: 1;
     padding: 8px 12px;
     border: 1px solid var(--border-color);
@@ -1091,9 +1093,26 @@ body {
     color: var(--text-primary);
     font-size: 14px;
     transition: var(--transition-fast);
+    min-height: 38px; /* 최소 높이 설정 */
+    box-sizing: border-box;
+    min-width: 0; /* flex item이 너무 작아질 수 있도록 */
 }
 
-.input-group input[type="text"]:focus {
+.input-group .btn {
+    flex-shrink: 0; /* 버튼이 줄어들지 않도록 */
+    height: auto; /* 높이 자동 조정 */
+    min-height: 38px; /* 입력 필드와 같은 최소 높이 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap; /* 텍스트가 줄바뀜되지 않도록 */
+    padding: 8px 16px;
+    min-width: 70px; /* 최소 너비 보장으로 버튼이 항상 보이도록 */
+    overflow: visible; /* 내용이 잘리지 않도록 */
+}
+
+.input-group input[type="text"]:focus,
+.input-group input[type="number"]:focus {
     outline: none;
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
@@ -1236,11 +1255,20 @@ body {
     }
     
     .input-group {
-        flex-direction: column;
+        flex-direction: row; /* 가로 배치 유지 */
+        align-items: stretch;
+        gap: 8px;
     }
     
     .input-group input[type="text"] {
-        width: 100%;
+        min-width: 0;
+        flex: 1;
+    }
+    
+    .input-group .btn {
+        min-width: 60px; /* 모바일에서도 충분한 너비 확보 */
+        font-size: 14px;
+        padding: 8px 12px;
     }
 }
 
@@ -1349,5 +1377,85 @@ body {
         border: none;
         border-bottom: 1px solid var(--border-color);
         padding: 8px 0;
+    }
+}
+
+/* ========== 자동 초기화 시간 설정 스타일 ========== */
+.input-with-unit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.input-with-unit input[type="number"] {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: var(--transition-fast);
+    min-width: 80px;
+}
+
+.input-with-unit input[type="number"]:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.input-unit {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 20px;
+}
+
+.filter-help {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+/* 자동 초기화 카운트다운 스타일 */
+#auto-reset-countdown {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+}
+
+#auto-reset-countdown.warning {
+    color: var(--color-warning);
+    animation: pulse 1s infinite;
+}
+
+#auto-reset-countdown.danger {
+    color: var(--color-danger);
+    animation: pulse 0.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+    .input-with-unit {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+    
+    .input-unit {
+        align-self: flex-start;
+        margin-left: 12px;
+    }
+    
+    .filter-help {
+        margin-top: 8px;
     }
 }

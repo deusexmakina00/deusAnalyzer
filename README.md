@@ -187,7 +187,7 @@ capture-csharp/
 ├── PacketConfigManager.cs         # Lua 기반 패킷 필터링 관리
 ├── NpcapPacketCapture.cs          # 크로스 플랫폼 패킷 캡처
 ├── ModernWebSocketServer.cs       # WebSocket 서버 구현
-├── SkillMatcher.cs                # 스킬 명칭 매칭 규칙
+├── SkillMatcher.cs                # 🎯 스킬 매칭 시스템 (Lua 기반)
 ├── StaticWebServer.cs             # HTTP 정적 파일 서버
 ├── PacketModels.cs                # 데이터 모델 및 파싱
 ├── PacketExtractor.cs             # 패킷 추출 유틸리티 (Lua 필터링 지원)
@@ -198,13 +198,49 @@ capture-csharp/
 ├── PacketCapture.csproj           # 프로젝트 파일
 ├── scripts/
 │   ├── packet_config.lua          # Lua 패킷 필터링 설정
-│   └── skill_matcher.lua          # Lua 스킬 매칭 규칙
+│   ├── skill_matcher_framework.lua # 🏗️ SkillMatcher 프레임워크 (수정 금지)
+│   ├── skill_matcher.lua          # ✨ 사용자 커스터마이징 영역
+│   ├── skill_matcher_template.lua # 📋 빠른 시작 템플릿
+│   └── skill_matcher_user.lua     # 📚 고급 예시 모음
 └── wwwroot/                       # 웹 인터페이스 파일
     ├── index.html
     ├── style.css
     ├── app.js
     └── translation.js
 ```
+
+## 🎯 SkillMatcher 시스템
+
+**새로워진 사용자 친화적 SkillMatcher!** 이제 복잡한 코드 없이 간단한 커스터마이징만으로 원하는 매칭 동작을 구현할 수 있습니다.
+
+### 빠른 시작
+
+1. **기본 사용**: 아무것도 수정하지 않아도 완벽하게 작동합니다
+2. **간단한 커스터마이징**: `skill_matcher.lua`에서 원하는 예시의 주석만 해제
+3. **고급 사용**: `skill_matcher_user.lua`의 예시를 참고하여 복잡한 로직 작성
+
+### 파일 설명
+
+- **📋 skill_matcher_template.lua**: 빠른 시작을 위한 템플릿
+- **✨ skill_matcher.lua**: 사용자가 커스터마이징하는 파일  
+- **📚 skill_matcher_user.lua**: 고급 예시와 설명
+- **🏗️ skill_matcher_framework.lua**: 모든 기본 기능 (건드리지 마세요!)
+
+### 커스터마이징 예시
+
+```lua
+-- skill_matcher.lua에서 주석 해제 후 수정
+function customCanBeChannelingSkill(skill, damageTime)
+    -- 라이트닝 스킬은 항상 즉시 스킬로 처리
+    if string.find(skill.SkillName, "Lightning") then
+        return false
+    end
+    return canBeChannelingSkill(skill, damageTime) -- 기본 로직
+end
+```
+
+**📖 자세한 가이드**: `SKILLMATCHER_GUIDE.md` 파일을 참고하세요!
+
 ## 🚨 문제 해결
 
 ### 일반적인 문제
@@ -243,6 +279,24 @@ capture-csharp/
 1. Lua 함수 이름 확인: `shouldExcludePacket` 또는 `shouldExcludePacketAdvanced`
 2. 로그에서 Lua 오류 메시지 확인
 3. 설정 파일 재로드: 파일 수정 후 자동 재로드됨
+
+#### SkillMatcher 오류
+```
+오류: [LuaEngine] Error in CleanupOldSkills 또는 매칭 실패
+```
+**해결 방법:**
+1. **기본 동작부터 확인**: `skill_matcher.lua`의 모든 커스텀 함수를 주석 처리
+2. **프레임워크 파일 확인**: `skill_matcher_framework.lua` 파일이 존재하는지 확인
+3. **템플릿 사용**: `skill_matcher_template.lua`를 `skill_matcher.lua`로 복사
+4. **로그 확인**: `[LuaEngine]` 태그로 시작하는 오류 메시지 확인
+
+```
+오류: 스킬이 매칭되지 않음
+```
+**해결 방법:**
+1. 커스텀 필터 함수(`customSkillFilter`)가 너무 제한적이지 않은지 확인
+2. 로그에서 `No skill match found` 메시지 확인
+3. 기본 동작으로 되돌린 후 단계별로 커스터마이징 추가
 
 #### 빌드 오류
 ```

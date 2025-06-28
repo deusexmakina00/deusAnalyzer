@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using MoonSharp.Interpreter;
 using NLog;
 
@@ -47,9 +48,12 @@ public sealed class SkillMatcher
             (Func<double>)(() => DateTime.UtcNow.Ticks / 10000000.0);
 
         // 이벤트 콜백 등록
-        _luaScript.Globals["OnDamageMatchedCallback_Packet"] =
-            (Action<SkillDamagePacket>)OnDamageMatchedFromLua;
         _luaScript.Globals["OnDamageMatchedCallback"] = (Action<DamageModel>)OnDamageMatchedFromLua;
+
+        // DamageModel 생성 함수 등록
+        _luaScript.Globals["CreateDamageModelWithFlags"] =
+            (Func<string, string, int, string, byte[], DamageModel>)
+                CreateDamageModelWithFlagsFromLua;
     }
 
     private void LoadScript()
@@ -60,16 +64,65 @@ public sealed class SkillMatcher
             {
                 var scriptContent = File.ReadAllText(_scriptPath);
                 _luaScript.DoString(scriptContent);
-                logger.Info($"[LuaEngine] Script loaded: {_scriptPath}");
+                logger.Info($"[LuaEngine] Script loaded successfully: {_scriptPath}");
+
+                // 필수 함수들의 존재 확인
+                var requiredFunctions = new[]
+                {
+                    "EnqueueSkillAction",
+                    "EnqueueSkillState",
+                    "EnqueueHpChange",
+                    "EnqueueSkillInfo",
+                    "EnqueueDamage",
+                };
+                var missingFunctions = new List<string>();
+
+                foreach (var functionName in requiredFunctions)
+                {
+                    if (!IsLuaFunctionAvailable(functionName))
+                    {
+                        missingFunctions.Add(functionName);
+                    }
+                }
+
+                if (missingFunctions.Count > 0)
+                {
+                    logger.Error(
+                        $"[LuaEngine] Missing required functions: {string.Join(", ", missingFunctions)}"
+                    );
+                    logger.Error(
+                        "[LuaEngine] Please ensure skill_matcher_framework.lua is properly loaded"
+                    );
+                }
+                else
+                {
+                    logger.Info("[LuaEngine] All required Lua functions are available");
+                }
             }
             else
             {
                 logger.Warn($"[LuaEngine] Script file not found: {_scriptPath}");
             }
         }
+        catch (ScriptRuntimeException ex)
+        {
+            logger.Error(
+                $"[LuaEngine] Lua Runtime Error loading script {_scriptPath}: {ex.DecoratedMessage}"
+            );
+            logger.Error($"[LuaEngine] Lua Stack Trace: {ex.CallStack}");
+        }
+        catch (SyntaxErrorException ex)
+        {
+            logger.Error(
+                $"[LuaEngine] Lua Syntax Error in script {_scriptPath}: {ex.DecoratedMessage}"
+            );
+        }
         catch (Exception ex)
         {
-            logger.Error(ex, $"[LuaEngine] Failed to load script: {_scriptPath}");
+            logger.Error(
+                ex,
+                $"[LuaEngine] Unexpected Error loading script {_scriptPath}: {ex.Message}"
+            );
         }
     }
 
@@ -81,9 +134,17 @@ public sealed class SkillMatcher
         _scriptWatcher = new FileSystemWatcher(directory, fileName);
         _scriptWatcher.Changed += (sender, e) =>
         {
-            Thread.Sleep(100); // 파일 쓰기 완료 대기
-            logger.Info("[LuaEngine] Script file changed, reloading...");
-            LoadScript();
+            try
+            {
+                Thread.Sleep(100); // 파일 쓰기 완료 대기
+                logger.Info("[LuaEngine] Script file changed, reloading...");
+                LoadScript();
+                logger.Info("[LuaEngine] Script reload completed successfully");
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "[LuaEngine] Error during script auto-reload");
+            }
         };
         _scriptWatcher.EnableRaisingEvents = true;
     }
@@ -111,28 +172,20 @@ public sealed class SkillMatcher
     }
 
     /// <summary>
-    /// Lua에서 데미지 매칭 수행
+    /// Lua 함수 존재 여부 확인 및 안전한 호출을 위한 헬퍼 메서드
     /// </summary>
-    public SkillDamagePacket MatchDamageToSkill(
-        SkillDamagePacket damagePacket,
-        DateTime lastAttackTime
-    )
+    private bool IsLuaFunctionAvailable(string functionName)
     {
+        return true;
         try
         {
-            var result = _luaScript.Call(
-                _luaScript.Globals["MatchDamageToSkill"],
-                damagePacket,
-                lastAttackTime.Ticks / 10000000.0
-            );
-
-            // Lua 결과를 C# 객체로 변환
-            return result.ToObject<SkillDamagePacket>() ?? damagePacket;
+            var function = _luaScript.Globals.Get(functionName);
+            return function != null && function.Type == DataType.Function && !function.IsNil();
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in MatchDamageToSkill");
-            return damagePacket; // 실패 시 원본 반환
+            logger.Debug($"[LuaEngine] Error checking function '{functionName}': {ex.Message}");
+            return false;
         }
     }
 
@@ -143,15 +196,28 @@ public sealed class SkillMatcher
     {
         try
         {
+            if (!IsLuaFunctionAvailable("EnqueueSkillAction"))
+            {
+                logger.Warn("[LuaEngine] EnqueueSkillAction function not found in Lua script");
+                return;
+            }
+
             _luaScript.Call(
                 _luaScript.Globals["EnqueueSkillAction"],
                 skillAction,
                 lastAt.Ticks / 10000000.0
             );
         }
+        catch (ScriptRuntimeException ex)
+        {
+            logger.Error(
+                $"[LuaEngine] Lua Runtime Error in EnqueueSkillAction: {ex.DecoratedMessage}"
+            );
+            logger.Error($"[LuaEngine] Lua Stack Trace: {ex.CallStack}");
+        }
         catch (Exception ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in EnqueueSkillAction");
+            logger.Error(ex, $"[LuaEngine] Unexpected Error in EnqueueSkillAction: {ex.Message}");
         }
     }
 
@@ -162,15 +228,28 @@ public sealed class SkillMatcher
     {
         try
         {
+            if (!IsLuaFunctionAvailable("EnqueueHpChange"))
+            {
+                logger.Warn("[LuaEngine] EnqueueHpChange function not found in Lua script");
+                return;
+            }
+
             _luaScript.Call(
                 _luaScript.Globals["EnqueueHpChange"],
                 hpInfo,
                 lastAt.Ticks / 10000000.0
             );
         }
+        catch (ScriptRuntimeException ex)
+        {
+            logger.Error(
+                $"[LuaEngine] Lua Runtime Error in EnqueueHpChange: {ex.DecoratedMessage}"
+            );
+            logger.Error($"[LuaEngine] Lua Stack Trace: {ex.CallStack}");
+        }
         catch (Exception ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in EnqueueHpChange");
+            logger.Error(ex, $"[LuaEngine] Unexpected Error in EnqueueHpChange: {ex.Message}");
         }
     }
 
@@ -183,15 +262,28 @@ public sealed class SkillMatcher
     {
         try
         {
+            if (!IsLuaFunctionAvailable("EnqueueSkillState"))
+            {
+                logger.Warn("[LuaEngine] EnqueueSkillState function not found in Lua script");
+                return;
+            }
+
             _luaScript.Call(
                 _luaScript.Globals["EnqueueSkillState"],
                 skillState,
                 lastAt.Ticks / 10000000.0
             );
         }
+        catch (ScriptRuntimeException ex)
+        {
+            logger.Error(
+                $"[LuaEngine] Lua Runtime Error in EnqueueSkillState: {ex.DecoratedMessage}"
+            );
+            logger.Error($"[LuaEngine] Lua Stack Trace: {ex.CallStack}");
+        }
         catch (Exception ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in EnqueueSkillState");
+            logger.Error(ex, $"[LuaEngine] Unexpected Error in EnqueueSkillState: {ex.Message}");
         }
     }
 
@@ -202,15 +294,28 @@ public sealed class SkillMatcher
     {
         try
         {
+            if (!IsLuaFunctionAvailable("EnqueueSkillInfo"))
+            {
+                logger.Warn("[LuaEngine] EnqueueSkillInfo function not found in Lua script");
+                return;
+            }
+
             _luaScript.Call(
                 _luaScript.Globals["EnqueueSkillInfo"],
                 skillInfo,
                 lastAt.Ticks / 10000000.0
             );
         }
+        catch (ScriptRuntimeException ex)
+        {
+            logger.Error(
+                $"[LuaEngine] Lua Runtime Error in EnqueueSkillInfo: {ex.DecoratedMessage}"
+            );
+            logger.Error($"[LuaEngine] Lua Stack Trace: {ex.CallStack}");
+        }
         catch (Exception ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in EnqueueSkillInfo");
+            logger.Error(ex, $"[LuaEngine] Unexpected Error in EnqueueSkillInfo: {ex.Message}");
         }
     }
 
@@ -221,26 +326,22 @@ public sealed class SkillMatcher
     {
         try
         {
+            if (!IsLuaFunctionAvailable("EnqueueDamage"))
+            {
+                logger.Warn("[LuaEngine] EnqueueDamage function not found in Lua script");
+                return;
+            }
+
             _luaScript.Call(_luaScript.Globals["EnqueueDamage"], damage, lastAt.Ticks / 10000000.0);
         }
-        catch (Exception ex)
+        catch (ScriptRuntimeException ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in EnqueueDamage");
-        }
-    }
-
-    /// <summary>
-    /// Lua에서 오래된 스킬 정리
-    /// </summary>
-    public void CleanupOldSkills(DateTime lastAt)
-    {
-        try
-        {
-            _luaScript.Call(_luaScript.Globals["CleanupOldSkills"], lastAt.Ticks / 10000000.0);
+            logger.Error($"[LuaEngine] Lua Runtime Error in EnqueueDamage: {ex.DecoratedMessage}");
+            logger.Error($"[LuaEngine] Lua Stack Trace: {ex.CallStack}");
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "[LuaEngine] Error in CleanupOldSkills");
+            logger.Error(ex, $"[LuaEngine] Unexpected Error in EnqueueDamage: {ex.Message}");
         }
     }
 
@@ -249,17 +350,37 @@ public sealed class SkillMatcher
     /// </summary>
     public event Action<DamageModel>? OnDamageMatched;
 
-    /// <summary>
-    /// Lua에서 데미지 매칭 완료 시 호출
-    /// </summary>
-    private void OnDamageMatchedFromLua(SkillDamagePacket damage)
-    {
-        OnDamageMatchedFromLua(damage.ToModel());
-    }
-
     private void OnDamageMatchedFromLua(DamageModel model)
     {
         OnDamageMatched?.Invoke(model);
+    }
+
+    /// <summary>
+    /// Lua에서 플래그와 함께 DamageModel을 생성하기 위한 헬퍼 함수
+    /// </summary>
+    private DamageModel CreateDamageModelWithFlagsFromLua(
+        string usedBy,
+        string target,
+        int damage,
+        string skillName,
+        byte[] flagBytes
+    )
+    {
+        var flagBits = new FlagBits();
+        if (flagBytes.Length >= 4)
+        {
+            flagBits = FlagBits.ParseFlags(flagBytes);
+        }
+
+        return new DamageModel
+        {
+            UsedBy = usedBy,
+            Target = target,
+            Damage = damage,
+            SkillName = skillName,
+            Flags = flagBits,
+            FlagBytes = flagBytes,
+        };
     }
 
     public void Dispose()

@@ -172,7 +172,7 @@ public static class PacketExtractor
         // 추출 결과 로깅
         if (totalPacketsFound > 0)
         {
-            Logger.Info(
+            Logger.Debug(
                 $"Packet extraction complete: {packets.Count} included, {filteredPackets} filtered, {totalPacketsFound} total found"
             );
         }
