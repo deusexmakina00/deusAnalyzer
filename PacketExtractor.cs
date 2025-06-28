@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using NLog;
 using SharpPcap.WinpkFilter;
 
 namespace PacketCapture;
@@ -26,14 +27,20 @@ public readonly record struct ExtractedPacket(
 /// <summary>
 /// 네트워크 패킷에서 특정 데이터 타입의 패킷을 추출하는 고성능 유틸리티 클래스
 /// 최신 C# 기능과 Span<T>를 활용한 메모리 효율적 구현
+/// Lua 기반 동적 필터링 지원
 /// </summary>
 public static class PacketExtractor
 {
+    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
+    /// <summary>패킷 설정 관리자 - Lua 기반 필터링</summary>
+    private static readonly PacketConfigManager ConfigManager = new PacketConfigManager();
+
     /// <summary>패킷 헤더 크기 (바이트)</summary>
     private const int PacketHeaderSize = 9;
 
-    /// <summary>최대 허용 패킷 길이</summary>
-    private const int MaxPacketLength = 65536;
+    /// <summary>최대 허용 패킷 길이 - Lua 설정에서 가져옴</summary>
+    private static int MaxPacketLength => ConfigManager.GetConfigValue("maxPacketLength", 65536);
 
     /// <summary>Brotli 압축 인코딩 타입</summary>
     private const byte BrotliEncodeType = 1;
@@ -94,37 +101,10 @@ public static class PacketExtractor
         return filteredPackets;
     }
 
-    private static int[] Excludes =
-    [
-        10318,
-        100043, // 네트워크?
-        100044, // 타겟과 관련
-        100047, // 동기화?
-        100049, //동기화?
-        100081, // 타겟과 관련
-        100085, // 시스템
-        100090,
-        100093, // 시스템
-        100177, // 타겟과 관련
-        100180, // 타겟과 관련
-        100252,
-        100253, // 행동 상태?
-        100278, // 캐릭터 행동 루프
-        100317, // 타겟과 관련
-        100582, // 위치와 관련
-        100585, // 위치와 관련
-        100587, // 위치와 관련
-        100589, // 이동 정보
-        100590, // 이동 방향
-        100594, // 위치와 관련
-        100600, // 상태 모니터링 패킷일 가능성 높음.
-        100828, // 엔티티 상태
-        100835, // 효과?
-    ];
-
     /// <summary>
     /// 바이트 배열에서 모든 유효한 패킷을 추출합니다.
     /// DataType(4) + Length(4) + Encode(1) + Payload(Length) 구조를 파싱합니다.
+    /// Lua 기반 필터링을 사용하여 패킷을 필터링합니다.
     /// </summary>
     /// <param name="data">패킷 데이터</param>
     /// <returns>추출된 패킷 목록</returns>
@@ -135,6 +115,12 @@ public static class PacketExtractor
 
         var packets = new List<ExtractedPacket>();
         int position = 0;
+        int totalPacketsFound = 0;
+        int filteredPackets = 0;
+
+        // 로깅 설정 확인
+        bool logPacketTypes = ConfigManager.GetConfigValue("logPacketTypes", false);
+        bool logFilteredPackets = ConfigManager.GetConfigValue("logFilteredPackets", false);
 
         while (position <= data.Length - PacketHeaderSize)
         {
@@ -142,10 +128,38 @@ public static class PacketExtractor
             var packet = TryExtractSinglePacket(data, position);
             if (packet.HasValue)
             {
-                if (!Excludes.Contains(packet.Value.DataType))
+                totalPacketsFound++;
+
+                // Lua 기반 필터링 사용
+                bool shouldExclude = ConfigManager.ShouldExcludePacket(
+                    (ushort)packet.Value.DataType,
+                    packet.Value.DataLength,
+                    (byte)packet.Value.EncodeType
+                );
+
+                if (!shouldExclude)
                 {
                     packets.Add(packet.Value);
+
+                    if (logPacketTypes)
+                    {
+                        Logger.Debug(
+                            $"Packet included: Type={packet.Value.DataType}, Length={packet.Value.DataLength}, Encode={packet.Value.EncodeType}"
+                        );
+                    }
                 }
+                else
+                {
+                    filteredPackets++;
+
+                    if (logFilteredPackets)
+                    {
+                        Logger.Debug(
+                            $"Packet filtered: Type={packet.Value.DataType}, Length={packet.Value.DataLength}, Encode={packet.Value.EncodeType}"
+                        );
+                    }
+                }
+
                 position = packet.Value.EndPosition;
             }
             else
@@ -153,6 +167,14 @@ public static class PacketExtractor
                 // 패킷 추출 실패 시 다음 바이트로 이동
                 position++;
             }
+        }
+
+        // 추출 결과 로깅
+        if (totalPacketsFound > 0)
+        {
+            Logger.Info(
+                $"Packet extraction complete: {packets.Count} included, {filteredPackets} filtered, {totalPacketsFound} total found"
+            );
         }
         packets.Sort((p1, p2) => p1.StartPosition.CompareTo(p2.StartPosition));
         return packets;
@@ -189,10 +211,18 @@ public static class PacketExtractor
             if (!IsValidPacketLength(payloadLength))
                 return null;
 
-            if (dataType <= 0 || dataType > 200000)
+            // DataType 범위 검사 - Lua 설정에서 가져옴
+            int minDataType = ConfigManager.GetConfigValue("minDataType", 1);
+            int maxDataType = ConfigManager.GetConfigValue("maxDataType", 200000);
+            if (dataType < minDataType || dataType > maxDataType)
                 return null;
-            // 인코딩 타입이 Brotli(1) 또는 압축되지 않음(0)만 허용
-            if (encodeType < 0 || encodeType > 1)
+
+            // 인코딩 타입 유효성 검사 - Lua 설정에서 가져옴
+            var validEncodingTypes = ConfigManager.GetConfigValue<int[]>(
+                "validEncodingTypes",
+                new int[] { 0, 1 }
+            );
+            if (validEncodingTypes != null && !validEncodingTypes.Contains(encodeType))
             {
                 return null;
             }
@@ -227,7 +257,12 @@ public static class PacketExtractor
     /// </summary>
     /// <param name="length">확인할 길이</param>
     /// <returns>유효성 여부</returns>
-    private static bool IsValidPacketLength(int length) => length is >= 1 and <= MaxPacketLength;
+    private static bool IsValidPacketLength(int length)
+    {
+        int minLength = ConfigManager.GetConfigValue("minPacketLength", 1);
+        int maxLength = ConfigManager.GetConfigValue("maxPacketLength", 65536);
+        return length >= minLength && length <= maxLength;
+    }
 
     /// <summary>
     /// 페이로드를 처리합니다 (압축 해제 포함).
@@ -531,5 +566,69 @@ public static class PacketExtractor
         }
 
         return dump.ToString();
+    }
+
+    /// <summary>
+    /// Lua 설정을 다시 로드합니다.
+    /// </summary>
+    public static void ReloadConfiguration()
+    {
+        ConfigManager.LoadConfiguration();
+        Logger.Info("Packet filtering configuration reloaded");
+    }
+
+    /// <summary>
+    /// 현재 제외된 패킷 타입 목록을 반환합니다.
+    /// </summary>
+    public static List<int> GetExcludedPacketTypes()
+    {
+        return ConfigManager.GetExcludedPacketTypes();
+    }
+
+    /// <summary>
+    /// 패킷 타입을 제외 목록에 추가합니다.
+    /// </summary>
+    public static void AddExcludedPacketType(int dataType)
+    {
+        ConfigManager.AddExcludedPacketType(dataType);
+        Logger.Info($"Added packet type {dataType} to exclusion list");
+    }
+
+    /// <summary>
+    /// 패킷 타입을 제외 목록에서 제거합니다.
+    /// </summary>
+    public static void RemoveExcludedPacketType(int dataType)
+    {
+        ConfigManager.RemoveExcludedPacketType(dataType);
+        Logger.Info($"Removed packet type {dataType} from exclusion list");
+    }
+
+    /// <summary>
+    /// 설정 값을 가져옵니다.
+    /// </summary>
+    public static T GetConfigValue<T>(string key, T defaultValue = default!)
+    {
+        return ConfigManager.GetConfigValue(key, defaultValue);
+    }
+
+    /// <summary>
+    /// 설정 값을 업데이트합니다.
+    /// </summary>
+    public static bool UpdateConfigValue(string key, object value)
+    {
+        bool result = ConfigManager.UpdateConfigValue(key, value);
+        if (result)
+        {
+            Logger.Info($"Updated configuration: {key} = {value}");
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 패킷 제외 여부를 직접 확인합니다.
+    /// </summary>
+    public static bool ShouldExcludePacket(ushort dataType, int dataLength, byte encodeType)
+    {
+        return ConfigManager.ShouldExcludePacket(dataType, dataLength, encodeType);
     }
 }
