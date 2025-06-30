@@ -338,6 +338,67 @@ local function registerInstallation(skillInfo, lastAt)
 end
 
 -- =============================================================================
+-- 패킷 조합 처리
+-- =============================================================================
+
+local function tryCreateDamageModelFromCombinedPackets(usedBy, target, lastTime)
+    local actionPacket = nil
+    local statePacket = nil
+    local hpPacket = nil
+    
+    -- SkillAction 패킷 찾기 (최근 것)
+    if pendingSkillActions[usedBy] then
+        for i = #pendingSkillActions[usedBy], 1, -1 do
+            local packet = pendingSkillActions[usedBy][i]
+            if (lastTime - packet.time) <= combinedPacketTimeout then
+                actionPacket = packet.packet
+                break
+            end
+        end
+    end
+    
+    -- SkillState 패킷 찾기 (최근 것)
+    if pendingSkillStates[usedBy] then
+        for i = #pendingSkillStates[usedBy], 1, -1 do
+            local packet = pendingSkillStates[usedBy][i]
+            if (lastTime - packet.time) <= combinedPacketTimeout then
+                statePacket = packet.packet
+                break
+            end
+        end
+    end
+    
+    -- ChangeHp 패킷 찾기 (타겟 기준)
+    if pendingChangeHp[target] then
+        for i = #pendingChangeHp[target], 1, -1 do
+            local packet = pendingChangeHp[target][i]
+            if (lastTime - packet.time) <= combinedPacketTimeout then
+                hpPacket = packet.packet
+                break
+            end
+        end
+    end
+    
+    -- 세 패킷이 모두 있으면 DamageModel 생성
+    if actionPacket and statePacket and hpPacket then
+        local skillName = actionPacket.ActionName or ""
+        local damage = math.abs(hpPacket.Damage or 0)
+        local flagBytes = statePacket.flags_bytes or {}
+        
+        Log('INFO', string.format('[Framework] Skill: %s, UsedBy: %s, Target: %s, Damage: %d', 
+            skillName, usedBy, target, damage))
+        
+        -- CreateDamageModelWithFlags 호출하여 DamageModel 생성
+        local damageModel = CreateDamageModelWithFlags(usedBy, target, damage, skillName, flagBytes)
+        OnDamageMatchedCallback(damageModel)
+        
+        return true
+    end
+    
+    return false
+end
+
+-- =============================================================================
 -- 정리 함수
 -- =============================================================================
 
@@ -429,48 +490,236 @@ end
 -- =============================================================================
 -- DamageModel 생성 및 콜백 헬퍼 함수들
 -- =============================================================================
-function NotifyDamageMatched(usedBy, target, damage, skillName, selfTarget, flagBytes)
+
+function SendDamageModel(usedBy, target, damage, skillName, flagBytes)
+    local damageModel
+    
+    if flagBytes and #flagBytes > 0 then
+        -- 플래그 바이트가 있는 경우
+        damageModel = CreateDamageModelWithFlags(usedBy, target, damage, skillName, flagBytes)
+    else
+        -- 기본 DamageModel 생성 (CreateDamageModel 함수가 없으므로 플래그 없이 생성)
+        damageModel = CreateDamageModelWithFlags(usedBy, target, damage, skillName, {})
+    end
+    
+    -- 콜백 호출
+    OnDamageMatchedCallback(damageModel)
+end
+
+function SendDamageModelFromPacket(damagePacket, skillName)
+    -- 플래그 바이트 추출
+    local flagBytes = {}
+    
+    if damagePacket.FlagBytes then
+        flagBytes = damagePacket.FlagBytes
+    elseif damagePacket.Flags then
+        flagBytes = damagePacket.Flags
+    end
+    
+    SendDamageModel(
+        damagePacket.UsedBy or "",
+        damagePacket.Target or "",
+        damagePacket.Damage or 0,
+        skillName or damagePacket.SkillName or "",
+        flagBytes
+    )
+end
+
+function NotifyDamageMatched(usedBy, target, damage, skillName, flagBytes)
     Log('INFO', string.format('[DamageMatched] %s -> %s | %s | Damage: %d', 
         usedBy or "Unknown", 
         target or "Unknown", 
         skillName or "Unknown Skill", 
         damage or 0))
-    local damageModel
     
-    damageModel = CreateDamageModel(usedBy, target, damage, skillName, flagBytes, selfTarget)
-    -- 콜백 호출
-    OnDamageMatchedCallback(damageModel)
+    SendDamageModel(usedBy, target, damage, skillName, flagBytes)
 end
+
+function SendSkillDamageAsModel(damagePacket, skillName)
+    -- 로그 출력
+    local usedBy = damagePacket.UsedBy or "Unknown"
+    local target = damagePacket.Target or "Unknown"
+    local damage = damagePacket.Damage or 0
+    local finalSkillName = skillName or damagePacket.SkillName or "Unknown Skill"
+    
+    Log('INFO', string.format('[SkillDamageMatched] %s -> %s | %s | Damage: %d', 
+        usedBy, target, finalSkillName, damage))
+    
+    -- DamageModel로 변환하여 전송
+    SendDamageModelFromPacket(damagePacket, skillName)
+end
+
+function SendMatchedSkillDamage(skillInfo, damagePacket)
+    local skillName = skillInfo.SkillName or skillInfo.ActionName or "Unknown Skill"
+    
+    Log('INFO', string.format('[MatchedSkillDamage] Skill: %s, UsedBy: %s -> Target: %s, Damage: %d',
+        skillName,
+        skillInfo.UsedBy or "Unknown",
+        damagePacket.Target or "Unknown", 
+        damagePacket.Damage or 0))
+    
+    SendDamageModelFromPacket(damagePacket, skillName)
+end
+
+function SendDamageModelFromChangeHpPacket(changeHpPacket, usedBy, skillName)
+    -- 수동 변환으로 DamageModel 생성
+    local damage = math.abs(changeHpPacket.Damage or changeHpPacket.HpChange or 0)
+    SendDamageModel(usedBy or "", changeHpPacket.Target or "", damage, skillName or "", {})
+end
+
 -- =============================================================================
 -- C#에서 호출되는 필수 Entrypoint 함수들
 -- =============================================================================
 
 -- SkillActionPacket 처리
 function EnqueueSkillAction(skillAction, lastAt)
-    Log('INFO', string.format('[Framework] EnqueueSkillAction: %s', 
-        skillAction.ToString()))
+    Log('DEBUG', string.format('[Framework] EnqueueSkillAction: %s by %s', 
+        skillAction.ActionName or "Unknown", skillAction.UsedBy or "Unknown"))
+    
+    -- 패킷 임시 저장 (조합용)
+    if not pendingSkillActions[skillAction.UsedBy] then
+        pendingSkillActions[skillAction.UsedBy] = {}
+    end
+    table.insert(pendingSkillActions[skillAction.UsedBy], {
+        packet = skillAction,
+        time = lastAt
+    })
+    
+    -- 패킷 조합 시도
+    if skillAction.Target then
+        tryCreateDamageModelFromCombinedPackets(skillAction.UsedBy, skillAction.Target, lastAt)
+    end
+    
+    -- 기존 스킬 매칭 로직 유지 (호환성)
+    local baseName, state, skillType = parseSkillName(skillAction.ActionName)
+    local skillKey = getSkillKey(skillAction.UsedBy, lastAt)
+    
+    if state == SkillState.Casting then
+        -- 새로운 캐스팅 스킬 등록
+        local newSkill = createActiveSkillInfo(
+            skillAction.UsedBy,
+            skillAction.Target,
+            skillAction.Target,
+            skillAction.NextTarget or "00000000",
+            baseName,
+            state,
+            skillType,
+            lastAt,
+            lastAt,
+            true,
+            0
+        )
+        castingSkills[skillKey] = newSkill
+        
+        Log('INFO', string.format('[Framework] New casting skill: %s Key: %s Target: %s', 
+            baseName, skillKey, skillAction.Target))
+    else
+        -- 기존 스킬 상태 업데이트
+        updateSkillState(skillKey, skillAction, state, lastAt)
+    end
 end
 
 -- SkillStatePacket 처리
 function EnqueueSkillState(skillStatePacket, lastAt)
-    Log('DEBUG', string.format('[Framework] EnqueueSkillState: %s', skillStatePacket.ToString()))
+    Log('DEBUG', string.format('[Framework] EnqueueSkillState: %s by %s', skillStatePacket.UsedBy or "Unknown", skillStatePacket.Target or "unknown"))
+    
+    -- 패킷 임시 저장 (조합용)
+    if not pendingSkillStates[skillStatePacket.UsedBy] then
+        pendingSkillStates[skillStatePacket.UsedBy] = {}
+    end
+    table.insert(pendingSkillStates[skillStatePacket.UsedBy], {
+        packet = skillStatePacket,
+        time = lastAt
+    })
+    
+    -- 패킷 조합 시도
+    if skillStatePacket.Target then
+        tryCreateDamageModelFromCombinedPackets(skillStatePacket.UsedBy, skillStatePacket.Target, lastAt)
+    end
 end
 
 -- ChangeHpPacket 처리 (EnqueueHpChange와 EnqueueChangeHp 통합)
 function EnqueueHpChange(changeHpPacket, lastAt)
-    Log('DEBUG', string.format('[Framework] EnqueueHpChange: %s', 
-        changeHpPacket.ToString()))
+    Log('DEBUG', string.format('[Framework] EnqueueHpChange: Target: %s, Damage: %d', 
+        changeHpPacket.Target or "Unknown", changeHpPacket.Damage or 0))
+    
+    -- 패킷 임시 저장 (조합용)
+    if not pendingChangeHp[changeHpPacket.Target] then
+        pendingChangeHp[changeHpPacket.Target] = {}
+    end
+    table.insert(pendingChangeHp[changeHpPacket.Target], {
+        packet = changeHpPacket,
+        time = lastAt
+    })
+    
+    -- 모든 가능한 UsedBy와 조합 시도
+    for usedBy, _ in pairs(pendingSkillActions) do
+        if tryCreateDamageModelFromCombinedPackets(usedBy, changeHpPacket.Target, lastAt) then
+            break -- 성공하면 중단
+        end
+    end
+    
+    for usedBy, _ in pairs(pendingSkillStates) do
+        if tryCreateDamageModelFromCombinedPackets(usedBy, changeHpPacket.Target, lastAt) then
+            break -- 성공하면 중단
+        end
+    end
+end
+
+-- EnqueueChangeHp는 EnqueueHpChange와 동일 (호환성)
+function EnqueueChangeHp(changeHpPacket, lastAt)
+    return EnqueueHpChange(changeHpPacket, lastAt)
 end
 
 -- SkillInfoPacket 처리
 function EnqueueSkillInfo(skillInfo, lastAt)
-    Log('DEBUG', string.format('[Framework] EnqueueSkillInfo: %s', 
-        skillInfo.ToString()))
+    Log('DEBUG', string.format('[Framework] EnqueueSkillInfo: %s by %s', 
+        skillInfo.SkillName or "Unknown", skillInfo.UsedBy or "Unknown"))
+    
+    -- 설치물 스킬 판단 및 등록
+    if isInstallationSkill(skillInfo) then
+        registerInstallation(skillInfo, lastAt)
+        return
+    end
+    
+    -- 일반 스킬 처리 로직
+    local skillKey = getSkillKey(skillInfo.UsedBy, lastAt)
+    local existingSkill = castingSkills[skillKey]
+    
+    if existingSkill then
+        -- 기존 스킬 업데이트
+        existingSkill.CurrentTarget = skillInfo.Target or existingSkill.CurrentTarget
+        existingSkill.LastStateTime = lastAt
+        addToTargetHistory(existingSkill.TargetHistory, skillInfo.Target)
+        
+        Log('DEBUG', string.format('[Framework] Updated skill info: %s Target: %s', 
+            skillInfo.SkillName, skillInfo.Target))
+    else
+        -- 새로운 스킬 정보 등록
+        local newSkill = createActiveSkillInfo(
+            skillInfo.UsedBy,
+            skillInfo.Target,
+            skillInfo.Target,
+            "00000000",
+            skillInfo.SkillName,
+            SkillState.Instant,
+            SkillType.Instant,
+            lastAt,
+            lastAt,
+            false,
+            0
+        )
+        castingSkills[skillKey] = newSkill
+        
+        Log('INFO', string.format('[Framework] New skill info: %s Key: %s Target: %s', 
+            skillInfo.SkillName, skillKey, skillInfo.Target))
+    end
 end
 
 -- SkillDamagePacket 처리
 function EnqueueDamage(damage, lastAttackTime)
-    Log('DEBUG', string.format('[Framework] EnqueueDamage: %s', damage.ToString()))
+    Log('DEBUG', string.format('[Framework] EnqueueDamage: %s -> %s, Damage: %d', 
+        damage.UsedBy or "Unknown", damage.Target or "Unknown", damage.Damage or 0))
     
     -- CleanupOldSkills 호출 (매칭 시작 전)
     CleanupOldSkills(lastAttackTime)
@@ -486,14 +735,22 @@ function EnqueueDamage(damage, lastAttackTime)
     
     -- 매칭 결과가 있으면 DamageModel 생성하여 전송
     if matchedDamage then
-        NotifyDamageMatched(
-            matchedDamage.UsedBy,
-            matchedDamage.Target,
-            matchedDamage.Damage,
-            matchedDamage.SkillName,
-            1,
-            matchedDamage.FlagBytes
+        local skillName = matchedDamage.SkillName or damage.SkillName or ""
+        local damageModel = CreateDamageModelWithFlags(
+            matchedDamage.UsedBy or damage.UsedBy or "",
+            matchedDamage.Target or damage.Target or "",
+            matchedDamage.Damage or damage.Damage or 0,
+            skillName,
+            matchedDamage.FlagBytes or damage.FlagBytes or {}
         )
+        
+        OnDamageMatchedCallback(damageModel)
+        
+        Log('INFO', string.format('[Framework] Damage matched and sent: %s -> %s | %s | Damage: %d', 
+            damageModel.UsedBy or "Unknown", 
+            damageModel.Target or "Unknown", 
+            skillName, 
+            damageModel.Damage or 0))
     else
         Log('DEBUG', '[Framework] No damage match result - skipping DamageModel creation')
     end
@@ -556,6 +813,7 @@ _G.combinedPacketTimeout = combinedPacketTimeout
 _G.EnqueueSkillAction = EnqueueSkillAction
 _G.EnqueueSkillState = EnqueueSkillState
 _G.EnqueueHpChange = EnqueueHpChange
+_G.EnqueueChangeHp = EnqueueChangeHp
 _G.EnqueueSkillInfo = EnqueueSkillInfo
 _G.EnqueueDamage = EnqueueDamage
 

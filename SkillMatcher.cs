@@ -51,9 +51,9 @@ public sealed class SkillMatcher
         _luaScript.Globals["OnDamageMatchedCallback"] = (Action<DamageModel>)OnDamageMatchedFromLua;
 
         // DamageModel 생성 함수 등록
-        _luaScript.Globals["CreateDamageModelWithFlags"] =
-            (Func<string, string, int, string, byte[], DamageModel>)
-                CreateDamageModelWithFlagsFromLua;
+        _luaScript.Globals["CreateDamageModel"] =
+            (Func<string, string, int, string, byte[],int, DamageModel>)
+                CreateDamageModel;
     }
 
     private void LoadScript()
@@ -65,39 +65,6 @@ public sealed class SkillMatcher
                 var scriptContent = File.ReadAllText(_scriptPath);
                 _luaScript.DoString(scriptContent);
                 logger.Info($"[LuaEngine] Script loaded successfully: {_scriptPath}");
-
-                // 필수 함수들의 존재 확인
-                var requiredFunctions = new[]
-                {
-                    "EnqueueSkillAction",
-                    "EnqueueSkillState",
-                    "EnqueueHpChange",
-                    "EnqueueSkillInfo",
-                    "EnqueueDamage",
-                };
-                var missingFunctions = new List<string>();
-
-                foreach (var functionName in requiredFunctions)
-                {
-                    if (!IsLuaFunctionAvailable(functionName))
-                    {
-                        missingFunctions.Add(functionName);
-                    }
-                }
-
-                if (missingFunctions.Count > 0)
-                {
-                    logger.Error(
-                        $"[LuaEngine] Missing required functions: {string.Join(", ", missingFunctions)}"
-                    );
-                    logger.Error(
-                        "[LuaEngine] Please ensure skill_matcher_framework.lua is properly loaded"
-                    );
-                }
-                else
-                {
-                    logger.Info("[LuaEngine] All required Lua functions are available");
-                }
             }
             else
             {
@@ -170,25 +137,6 @@ public sealed class SkillMatcher
                 break;
         }
     }
-
-    /// <summary>
-    /// Lua 함수 존재 여부 확인 및 안전한 호출을 위한 헬퍼 메서드
-    /// </summary>
-    private bool IsLuaFunctionAvailable(string functionName)
-    {
-        return true;
-        try
-        {
-            var function = _luaScript.Globals.Get(functionName);
-            return function != null && function.Type == DataType.Function && !function.IsNil();
-        }
-        catch (Exception ex)
-        {
-            logger.Debug($"[LuaEngine] Error checking function '{functionName}': {ex.Message}");
-            return false;
-        }
-    }
-
     /// <summary>
     /// Lua에서 스킬 액션 처리
     /// </summary>
@@ -196,12 +144,6 @@ public sealed class SkillMatcher
     {
         try
         {
-            if (!IsLuaFunctionAvailable("EnqueueSkillAction"))
-            {
-                logger.Warn("[LuaEngine] EnqueueSkillAction function not found in Lua script");
-                return;
-            }
-
             _luaScript.Call(
                 _luaScript.Globals["EnqueueSkillAction"],
                 skillAction,
@@ -228,12 +170,6 @@ public sealed class SkillMatcher
     {
         try
         {
-            if (!IsLuaFunctionAvailable("EnqueueHpChange"))
-            {
-                logger.Warn("[LuaEngine] EnqueueHpChange function not found in Lua script");
-                return;
-            }
-
             _luaScript.Call(
                 _luaScript.Globals["EnqueueHpChange"],
                 hpInfo,
@@ -262,12 +198,6 @@ public sealed class SkillMatcher
     {
         try
         {
-            if (!IsLuaFunctionAvailable("EnqueueSkillState"))
-            {
-                logger.Warn("[LuaEngine] EnqueueSkillState function not found in Lua script");
-                return;
-            }
-
             _luaScript.Call(
                 _luaScript.Globals["EnqueueSkillState"],
                 skillState,
@@ -294,12 +224,6 @@ public sealed class SkillMatcher
     {
         try
         {
-            if (!IsLuaFunctionAvailable("EnqueueSkillInfo"))
-            {
-                logger.Warn("[LuaEngine] EnqueueSkillInfo function not found in Lua script");
-                return;
-            }
-
             _luaScript.Call(
                 _luaScript.Globals["EnqueueSkillInfo"],
                 skillInfo,
@@ -326,12 +250,6 @@ public sealed class SkillMatcher
     {
         try
         {
-            if (!IsLuaFunctionAvailable("EnqueueDamage"))
-            {
-                logger.Warn("[LuaEngine] EnqueueDamage function not found in Lua script");
-                return;
-            }
-
             _luaScript.Call(_luaScript.Globals["EnqueueDamage"], damage, lastAt.Ticks / 10000000.0);
         }
         catch (ScriptRuntimeException ex)
@@ -358,12 +276,13 @@ public sealed class SkillMatcher
     /// <summary>
     /// Lua에서 플래그와 함께 DamageModel을 생성하기 위한 헬퍼 함수
     /// </summary>
-    private DamageModel CreateDamageModelWithFlagsFromLua(
+    private DamageModel CreateDamageModel(
         string usedBy,
         string target,
         int damage,
         string skillName,
-        byte[] flagBytes
+        byte[] flagBytes,
+        int selfTarget
     )
     {
         var flagBits = new FlagBits();
@@ -380,6 +299,7 @@ public sealed class SkillMatcher
             SkillName = skillName,
             Flags = flagBits,
             FlagBytes = flagBytes,
+            SelfTarget = selfTarget
         };
     }
 
